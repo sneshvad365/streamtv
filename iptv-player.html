@@ -92,9 +92,6 @@
 
   /* EPG */
   .epg-panel { height: var(--epg-h); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
-  .epg-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px 6px; border-bottom: 1px solid var(--border); }
-  .epg-title { font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; }
-  .epg-date { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; }
   .epg-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; padding: 10px 16px; display: flex; gap: 6px; align-items: flex-start; }
   .epg-scroll::-webkit-scrollbar { height: 4px; }
   .epg-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -186,6 +183,12 @@
       </span>
       <input type="text" id="search-input" placeholder="Search channels…">
     </div>
+    <div class="search-box" style="max-width:200px">
+      <span class="search-icon">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </span>
+      <input type="text" id="group-search-input" placeholder="Filter groups…">
+    </div>
     <div style="display:flex;align-items:center;gap:8px;" id="live-indicator" style="display:none">
       <div class="live-dot"></div>
       <span class="live-label">LIVE</span>
@@ -235,10 +238,6 @@
     <div class="resizer resizer-h" id="epg-resizer"></div>
     <!-- EPG -->
     <div class="epg-panel">
-      <div class="epg-header">
-        <span class="epg-title">TV Guide</span>
-        <span class="epg-date" id="epg-date"></span>
-      </div>
       <div class="epg-scroll" id="epg-scroll">
         <div class="epg-empty">Select a channel to see its schedule</div>
       </div>
@@ -650,7 +649,9 @@ function parseXmltvDate(s) {
 }
 
 function renderSidebar() {
-  const groups = ['All', ...new Set(channels.map(c => c.group))].slice(0, 20);
+  const gq = (document.getElementById('group-search-input')?.value || '').toLowerCase().trim();
+  const allGroups = ['All', ...new Set(channels.map(c => c.group))];
+  const groups = gq ? allGroups.filter(g => g === 'All' || g.toLowerCase().includes(gq)) : allGroups;
   const catEl = document.getElementById('categories');
   catEl.innerHTML = '';
   groups.forEach(g => {
@@ -798,7 +799,7 @@ function addToRecent(name) {
 }
 
 
-document.getElementById('epg-date').textContent = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+// epg-date element removed
 document.getElementById('live-indicator').style.display = 'none';
 
 // Virtual scroll — update on scroll
@@ -806,6 +807,7 @@ document.getElementById('channel-list').addEventListener('scroll', vsRender, { p
 
 // Debounced search — 150 ms after last keystroke
 document.getElementById('search-input').addEventListener('input', debounce(filterChannels, 150));
+document.getElementById('group-search-input').addEventListener('input', debounce(() => { currentCat = 'All'; renderSidebar(); }, 150));
 
 async function saveCache(data) {
   try {
@@ -877,9 +879,7 @@ async function refreshChannels() {
 
 function renderEPG(ch) {
   const el = document.getElementById('epg-scroll');
-  const dateEl = document.getElementById('epg-date');
   const now = new Date();
-  dateEl.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   const progs = epgData[ch.tvgId] || generateDemoEPG(ch.name);
   if (!progs.length) { el.innerHTML = '<div class="epg-empty">No EPG data for this channel</div>'; return; }
   el.innerHTML = '';
