@@ -1,0 +1,7 @@
+# IPTV credentials & cached channel list — never commit these
+channel-cache.json
+
+# Misc
+files.zip
+.DS_Store
+.claude/
