@@ -74,6 +74,9 @@
   .channel-item:hover { background: var(--surface2); }
   .channel-item.active { background: var(--surface3); border: 1px solid var(--border2); }
   .ch-logo-wrap { position: relative; flex-shrink: 0; }
+  .ch-logo-wrap.removable:hover .ch-logo { opacity: 0.35; }
+  .ch-logo-wrap.removable::after { content: '×'; position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 17px; font-weight: 400; color: var(--red); pointer-events: none; }
+  .ch-logo-wrap.removable:hover::after { display: flex; }
   .ch-logo { width: 36px; height: 36px; border-radius: 6px; background: var(--surface3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--accent2); overflow: hidden; font-family: 'DM Mono', monospace; }
   .ch-logo img { width: 100%; height: 100%; object-fit: cover; }
   .ch-info { flex: 1; min-width: 0; }
@@ -90,6 +93,7 @@
   .player-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   .video-wrap { flex: 1; background: #000; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 0; }
   video { width: 100%; height: 100%; object-fit: contain; }
+  video.cropped { object-fit: cover; }
   .player-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; pointer-events: none; }
   .player-overlay.hidden { display: none; }
   .play-icon { width: 60px; height: 60px; background: rgba(108,99,255,0.25); border: 2px solid rgba(108,99,255,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
@@ -194,7 +198,7 @@
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </span>
-      <input type="text" id="group-search-input" placeholder="Filter groups…">
+      <input type="text" id="group-search-input" placeholder="Filter groups…" value="all.">
       <span class="regex-toggle" id="group-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('group')">.*</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;" id="live-indicator" style="display:none">
@@ -205,6 +209,8 @@
     </div>
     <div style="flex:1"></div>
     <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
+    <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
+    <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
     <button class="btn" id="refresh-btn" onclick="refreshChannels()" style="display:none" title="Re-fetch channels from provider">↻ Refresh</button>
@@ -365,7 +371,7 @@ const BUFFER_PRESETS = {
   high:   { label: 'High',   detail: '10 s — smooth on congested networks',  bufferTarget: 10, maxBufferLength: 30, liveSyncDurationCount: 4 },
 };
 
-let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium"}');
+let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true}');
 function saveStreamSettings() { localStorage.setItem('stream-settings', JSON.stringify(streamSettings)); }
 
 function showSettings() {
@@ -689,7 +695,8 @@ function parseXmltvDate(s) {
 function renderSidebar() {
   const gq = (document.getElementById('group-search-input')?.value || '').trim();
   const allGroups = ['All', ...new Set(channels.map(c => c.group))];
-  const groups = gq ? allGroups.filter(g => g === 'All' || matchStr(g, gq, groupIsRegex, 'group-search-input')) : allGroups;
+  const isShowAll = !gq || gq.toLowerCase() === 'all' || gq.toLowerCase() === 'all.';
+  const groups = isShowAll ? allGroups : allGroups.filter(g => g === 'All' || matchStr(g, gq, groupIsRegex, 'group-search-input'));
   const catEl = document.getElementById('categories');
   catEl.innerHTML = '';
   groups.forEach(g => {
@@ -710,8 +717,12 @@ function buildChannelItem(ch) {
   const isFav = favourites.has(ch.name);
   const item = document.createElement('div');
   item.className = 'channel-item' + (currentChannel === ch ? ' active' : '');
-  item.innerHTML = `<div class="ch-logo-wrap"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${ch.group}</div></div>`;
+  const isRecent = currentTab === 'recent';
+  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${ch.group}</div></div>`;
   item.querySelector('.fav-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleFav(ch, item.querySelector('.fav-btn')); });
+  if (isRecent) {
+    item.querySelector('.ch-logo-wrap').addEventListener('click', (e) => { e.stopPropagation(); removeFromRecent(ch.name); });
+  }
   item.addEventListener('click', () => playChannel(ch));
   return item;
 }
@@ -757,6 +768,12 @@ function renderChannels(resetScroll = false) {
   vsRender();
 }
 
+function removeFromRecent(name) {
+  recentChannels = recentChannels.filter(n => n !== name);
+  saveRecent();
+  renderChannels(true);
+}
+
 function toggleFav(ch, btn) {
   if (favourites.has(ch.name)) { favourites.delete(ch.name); btn.classList.remove('active'); }
   else { favourites.add(ch.name); btn.classList.add('active'); }
@@ -776,6 +793,36 @@ function switchTab(tab, el) {
 
 let _hls = null;
 
+function toggleEPG() {
+  streamSettings.epgVisible = !streamSettings.epgVisible;
+  saveStreamSettings();
+  applyEPGVisibility();
+}
+
+function applyEPGVisibility() {
+  const visible = streamSettings.epgVisible !== false;
+  document.querySelector('.epg-panel').style.display = visible ? '' : 'none';
+  document.getElementById('epg-resizer').style.display = visible ? '' : 'none';
+  const btn = document.getElementById('epg-toggle-btn');
+  btn.classList.toggle('btn-accent', !visible);
+}
+
+function toggleCrop() {
+  streamSettings.crop = !streamSettings.crop;
+  saveStreamSettings();
+  const video = document.getElementById('player');
+  const btn = document.getElementById('crop-btn');
+  video.classList.toggle('cropped', streamSettings.crop);
+  btn.classList.toggle('btn-accent', streamSettings.crop);
+}
+
+function applyPersistedCrop() {
+  if (streamSettings.crop) {
+    document.getElementById('player').classList.add('cropped');
+    document.getElementById('crop-btn').classList.add('btn-accent');
+  }
+}
+
 function playPrevious() {
   if (previousChannel) playChannel(previousChannel);
 }
@@ -785,6 +832,8 @@ function playChannel(ch) {
     previousChannel = currentChannel;
     document.getElementById('prev-btn').style.display = '';
   }
+  document.getElementById('crop-btn').style.display = '';
+  applyPersistedCrop();
   currentChannel = ch;
   const video = document.getElementById('player');
   document.getElementById('player-overlay').classList.add('hidden');
@@ -847,6 +896,7 @@ function addToRecent(name) {
 
 // epg-date element removed
 document.getElementById('live-indicator').style.display = 'none';
+applyEPGVisibility();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
