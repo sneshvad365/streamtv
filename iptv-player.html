@@ -77,7 +77,7 @@
   .ch-logo { width: 36px; height: 36px; border-radius: 6px; background: var(--surface3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--accent2); overflow: hidden; font-family: 'DM Mono', monospace; }
   .ch-logo img { width: 100%; height: 100%; object-fit: cover; }
   .ch-info { flex: 1; min-width: 0; }
-  .ch-name { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ch-name { font-size: 11px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ch-meta { font-size: 11px; color: var(--text3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ch-now { font-size: 10px; color: var(--accent2); font-family: 'DM Mono', monospace; }
   .fav-btn { position: absolute; bottom: -3px; right: -3px; width: 15px; height: 15px; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; color: var(--text3); cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
@@ -204,6 +204,7 @@
       <span id="topbar-channel" style="font-size:13px;font-weight:500;color:var(--text);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
     </div>
     <div style="flex:1"></div>
+    <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
     <button class="btn" id="refresh-btn" onclick="refreshChannels()" style="display:none" title="Re-fetch channels from provider">↻ Refresh</button>
@@ -386,7 +387,7 @@ function renderBufferOptions() {
 }
 
 let channels = [], filtered = [], favourites = new Set(JSON.parse(localStorage.getItem('stream-favs') || '[]'));
-let currentTab = 'all', currentCat = 'All', currentChannel = null;
+let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null;
 let searchIsRegex = false, groupIsRegex = false;
 
 function toggleSearchRegex(which) {
@@ -775,7 +776,15 @@ function switchTab(tab, el) {
 
 let _hls = null;
 
+function playPrevious() {
+  if (previousChannel) playChannel(previousChannel);
+}
+
 function playChannel(ch) {
+  if (currentChannel && currentChannel !== ch) {
+    previousChannel = currentChannel;
+    document.getElementById('prev-btn').style.display = '';
+  }
   currentChannel = ch;
   const video = document.getElementById('player');
   document.getElementById('player-overlay').classList.add('hidden');
@@ -841,6 +850,24 @@ document.getElementById('live-indicator').style.display = 'none';
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'f' || e.key === 'F') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen().catch(() => {});
+  } else if (e.key === 'm' || e.key === 'M') {
+    const video = document.getElementById('player');
+    video.muted = !video.muted;
+  } else if (e.key === 'p' || e.key === 'P') {
+    playPrevious();
+  } else if (e.key === 's' || e.key === 'S') {
+    const input = document.getElementById('search-input');
+    input.focus();
+    input.select();
+  }
+});
 
 // Debounced search — 150 ms after last keystroke
 document.getElementById('search-input').addEventListener('input', debounce(filterChannels, 150));
@@ -917,7 +944,7 @@ async function refreshChannels() {
 function renderEPG(ch) {
   const el = document.getElementById('epg-scroll');
   const now = new Date();
-  const progs = epgData[ch.tvgId] || generateDemoEPG(ch.name);
+  const progs = (epgData[ch.tvgId]?.length) ? epgData[ch.tvgId] : generateDemoEPG(ch.name);
   if (!progs.length) { el.innerHTML = '<div class="epg-empty">No EPG data for this channel</div>'; return; }
   el.innerHTML = '';
   progs.forEach(p => {
@@ -940,11 +967,12 @@ function renderEPG(ch) {
 }
 
 function generateDemoEPG(name) {
-  const shows = ['Morning News','Breakfast Show','Documentary Hour','Talk Show','Drama Series','Evening News','Prime Time Movie','Late Night Show','Sports Highlights','World Affairs'];
+  const shows = ['Overnight Programming','Early Morning News','Breakfast Show','Morning Magazine','Documentary Hour','Midday News','Talk Show','Afternoon Drama','Early Evening News','Prime Time Show','Late News','Prime Time Movie','Late Night Show','Overnight Programming'];
+  const durs =  [120, 60, 90, 90, 60, 30, 90, 120, 30, 60, 30, 120, 90, 120];
   const progs = [];
-  let t = new Date(); t.setHours(6,0,0,0);
+  let t = new Date(); t.setHours(0,0,0,0);
   shows.forEach((show, i) => {
-    const dur = [60,90,60,120,60,30,120,60,90,60][i] * 60000;
+    const dur = durs[i] * 60000;
     progs.push({ start: new Date(t), stop: new Date(t.getTime() + dur), title: show, desc: '' });
     t = new Date(t.getTime() + dur);
   });
@@ -1022,6 +1050,14 @@ function generateDemoEPG(name) {
     updateProxyBadge(true);
     renderSidebar();
     if (cache.savedAt) showCacheBadge(cache.savedAt);
+    // Silently reload EPG in the background so guide data is available
+    if (cache.account) {
+      const { host, username, password } = cache.account;
+      const epgUrl = `${host}/xmltv.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+      loadEPG(epgUrl).then(() => {
+        if (currentChannel) renderEPG(currentChannel);
+      });
+    }
   } else {
     showSetup();
   }
