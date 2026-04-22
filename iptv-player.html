@@ -22,7 +22,7 @@
     --red: #ff4d6a;
     --green: #3ddc84;
     --amber: #ffb340;
-    --sidebar-w: 300px;
+    --sidebar-w: 260px;
     --epg-h: 220px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,10 +37,14 @@
   .logo-text span { color: var(--accent2); }
   .topbar-actions { flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 16px; }
   .search-box { flex: 1; max-width: 360px; position: relative; }
-  .search-box input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px 6px 34px; font-size: 13px; color: var(--text); font-family: inherit; outline: none; transition: border-color 0.15s; }
+  .search-box input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 30px 6px 34px; font-size: 13px; color: var(--text); font-family: inherit; outline: none; transition: border-color 0.15s; }
   .search-box input:focus { border-color: var(--accent); }
   .search-box input::placeholder { color: var(--text3); }
+  .search-box input.regex-error { border-color: var(--red); }
   .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; }
+  .regex-toggle { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text3); cursor: pointer; border-radius: 3px; padding: 1px 3px; transition: all 0.15s; user-select: none; line-height: 1; }
+  .regex-toggle:hover { color: var(--text); background: var(--surface3); }
+  .regex-toggle.active { color: var(--accent2); background: rgba(108,99,255,0.18); }
   .btn { padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); font-family: inherit; }
   .btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
   .btn-accent { background: var(--accent); border-color: var(--accent); color: white; }
@@ -69,14 +73,16 @@
   .channel-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background 0.1s; height: 52px; box-sizing: border-box; }
   .channel-item:hover { background: var(--surface2); }
   .channel-item.active { background: var(--surface3); border: 1px solid var(--border2); }
-  .ch-logo { width: 36px; height: 36px; border-radius: 6px; background: var(--surface3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--accent2); overflow: hidden; flex-shrink: 0; font-family: 'DM Mono', monospace; }
+  .ch-logo-wrap { position: relative; flex-shrink: 0; }
+  .ch-logo { width: 36px; height: 36px; border-radius: 6px; background: var(--surface3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--accent2); overflow: hidden; font-family: 'DM Mono', monospace; }
   .ch-logo img { width: 100%; height: 100%; object-fit: cover; }
   .ch-info { flex: 1; min-width: 0; }
   .ch-name { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ch-meta { font-size: 11px; color: var(--text3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ch-now { font-size: 10px; color: var(--accent2); font-family: 'DM Mono', monospace; }
-  .fav-btn { color: var(--text3); cursor: pointer; font-size: 14px; padding: 4px; transition: color 0.15s; flex-shrink: 0; }
-  .fav-btn:hover, .fav-btn.active { color: var(--amber); }
+  .fav-btn { position: absolute; bottom: -3px; right: -3px; width: 15px; height: 15px; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; color: var(--text3); cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
+  .fav-btn.active { color: var(--amber); opacity: 1; }
+  .channel-item:hover .fav-btn { opacity: 1; }
   .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; padding: 24px; text-align: center; }
   .empty-state p { font-size: 13px; color: var(--text3); line-height: 1.5; }
 
@@ -182,12 +188,14 @@
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       </span>
       <input type="text" id="search-input" placeholder="Search channels…">
+      <span class="regex-toggle" id="search-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('channel')">.*</span>
     </div>
     <div class="search-box" style="max-width:200px">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </span>
       <input type="text" id="group-search-input" placeholder="Filter groups…">
+      <span class="regex-toggle" id="group-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('group')">.*</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;" id="live-indicator" style="display:none">
       <div class="live-dot"></div>
@@ -379,6 +387,35 @@ function renderBufferOptions() {
 
 let channels = [], filtered = [], favourites = new Set(JSON.parse(localStorage.getItem('stream-favs') || '[]'));
 let currentTab = 'all', currentCat = 'All', currentChannel = null;
+let searchIsRegex = false, groupIsRegex = false;
+
+function toggleSearchRegex(which) {
+  if (which === 'channel') {
+    searchIsRegex = !searchIsRegex;
+    document.getElementById('search-regex-toggle').classList.toggle('active', searchIsRegex);
+    filterChannels();
+  } else {
+    groupIsRegex = !groupIsRegex;
+    document.getElementById('group-regex-toggle').classList.toggle('active', groupIsRegex);
+    currentCat = 'All';
+    renderSidebar();
+  }
+}
+
+function matchStr(str, q, isRegex, inputId) {
+  if (!q) return true;
+  if (isRegex) {
+    try {
+      const ok = new RegExp(q, 'i').test(str);
+      if (inputId) document.getElementById(inputId)?.classList.remove('regex-error');
+      return ok;
+    } catch {
+      if (inputId) document.getElementById(inputId)?.classList.add('regex-error');
+      return false;
+    }
+  }
+  return str.toLowerCase().includes(q.toLowerCase());
+}
 let epgData = {};
 let recentChannels = JSON.parse(localStorage.getItem('stream-recent') || '[]');
 let savedAccounts = JSON.parse(localStorage.getItem('stream-accounts') || '[]');
@@ -649,19 +686,19 @@ function parseXmltvDate(s) {
 }
 
 function renderSidebar() {
-  const gq = (document.getElementById('group-search-input')?.value || '').toLowerCase().trim();
+  const gq = (document.getElementById('group-search-input')?.value || '').trim();
   const allGroups = ['All', ...new Set(channels.map(c => c.group))];
-  const groups = gq ? allGroups.filter(g => g === 'All' || g.toLowerCase().includes(gq)) : allGroups;
+  const groups = gq ? allGroups.filter(g => g === 'All' || matchStr(g, gq, groupIsRegex, 'group-search-input')) : allGroups;
   const catEl = document.getElementById('categories');
   catEl.innerHTML = '';
   groups.forEach(g => {
     const pill = document.createElement('div');
     pill.className = 'cat-pill' + (g === currentCat ? ' active' : '');
     pill.textContent = g;
-    pill.onclick = () => { currentCat = g; document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active')); pill.classList.add('active'); renderChannels(); };
+    pill.onclick = () => { currentCat = g; document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active')); pill.classList.add('active'); renderChannels(true); };
     catEl.appendChild(pill);
   });
-  renderChannels();
+  renderChannels(true);
 }
 
 const ROW_H = 52; // must match .channel-item height in CSS
@@ -672,7 +709,7 @@ function buildChannelItem(ch) {
   const isFav = favourites.has(ch.name);
   const item = document.createElement('div');
   item.className = 'channel-item' + (currentChannel === ch ? ' active' : '');
-  item.innerHTML = `<div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${ch.group}</div></div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div>`;
+  item.innerHTML = `<div class="ch-logo-wrap"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${ch.group}</div></div>`;
   item.querySelector('.fav-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleFav(ch, item.querySelector('.fav-btn')); });
   item.addEventListener('click', () => playChannel(ch));
   return item;
@@ -707,15 +744,15 @@ function vsRender() {
   container.replaceChildren(frag);
 }
 
-function renderChannels() {
-  const q = document.getElementById('search-input').value.toLowerCase();
+function renderChannels(resetScroll = false) {
+  const q = document.getElementById('search-input').value;
   let list = channels;
   if (currentTab === 'fav') list = channels.filter(c => favourites.has(c.name));
   if (currentTab === 'recent') list = recentChannels.map(n => channels.find(c => c.name === n)).filter(Boolean);
   if (currentCat !== 'All' && currentTab === 'all') list = list.filter(c => c.group === currentCat);
-  if (q) list = list.filter(c => c.name.toLowerCase().includes(q));
+  if (q) list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
   filtered = list;
-  document.getElementById('channel-list').scrollTop = 0;
+  if (resetScroll) document.getElementById('channel-list').scrollTop = 0;
   vsRender();
 }
 
@@ -727,13 +764,13 @@ function toggleFav(ch, btn) {
 }
 
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-function filterChannels() { renderChannels(); }
+function filterChannels() { renderChannels(true); }
 
 function switchTab(tab, el) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  renderChannels();
+  renderChannels(true);
 }
 
 let _hls = null;
