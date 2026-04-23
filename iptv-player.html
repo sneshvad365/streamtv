@@ -174,6 +174,26 @@
   .resizer-h:hover, .resizer-h.dragging { background: rgba(108,99,255,0.15); }
   body.dragging-h, body.dragging-h * { cursor: row-resize !important; user-select: none; }
   body.dragging-v, body.dragging-v * { cursor: col-resize !important; user-select: none; }
+
+  @media (max-width: 768px) {
+    .logo { width: auto; padding: 0 10px; border-right: none; }
+    .logo-text { display: none; }
+    .topbar-actions { padding: 0 8px; gap: 5px; }
+    .search-box { max-width: none !important; }
+    #group-search-box { display: none; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn { display: none !important; }
+
+    .main { flex-direction: column; }
+    .sidebar { width: 100%; flex: 1; border-right: none; }
+    .resizer-v { display: none; }
+
+    .player-area { flex: none; height: calc(100vw * 9 / 16); min-height: 160px; max-height: 38vh; }
+
+    .categories { flex-wrap: nowrap; overflow-x: auto; padding: 6px 8px; }
+    .categories::-webkit-scrollbar { display: none; }
+
+    .epg-panel, #epg-resizer { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -194,7 +214,7 @@
       <input type="text" id="search-input" placeholder="Search channels…">
       <span class="regex-toggle" id="search-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('channel')">.*</span>
     </div>
-    <div class="search-box" style="max-width:200px">
+    <div class="search-box" id="group-search-box" style="max-width:200px">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </span>
