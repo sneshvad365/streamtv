@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stream — IPTV Player</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='38' fill='%23CC0000'/><rect x='18' y='46' width='144' height='88' rx='12' fill='white'/><polygon points='66,64 66,116 124,90' fill='%23CC0000'/></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='38' fill='%23CC0000'/><rect x='18' y='46' width='144' height='88' rx='12' fill='white'/><polygon points='66,64 66,116 124,90' fill='%23CC0000'/></svg>">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stream">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
 <style>
@@ -247,6 +251,7 @@
       <div class="tab active" onclick="switchTab('all',this)">All</div>
       <div class="tab" onclick="switchTab('fav',this)">Favourites</div>
       <div class="tab" onclick="switchTab('recent',this)">Recent</div>
+      <div id="groups-toggle" onclick="toggleGroups()" title="Show/hide groups" style="padding:0 12px;display:flex;align-items:center;cursor:pointer;color:var(--text3);font-size:11px;border-left:1px solid var(--border);transition:color 0.15s;user-select:none;">▾</div>
     </div>
     <div class="categories" id="categories"></div>
     <div class="channel-list" id="channel-list">
@@ -782,7 +787,7 @@ function renderChannels(resetScroll = false) {
   if (currentTab === 'fav') list = channels.filter(c => favourites.has(c.name));
   if (currentTab === 'recent') list = recentChannels.map(n => channels.find(c => c.name === n)).filter(Boolean);
   if (currentCat !== 'All' && currentTab === 'all') list = list.filter(c => c.group === currentCat);
-  if (q) list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
+  if (q && currentTab === 'all') list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
   filtered = list;
   if (resetScroll) document.getElementById('channel-list').scrollTop = 0;
   vsRender();
@@ -813,6 +818,20 @@ function switchTab(tab, el) {
 
 let _hls = null;
 
+function toggleGroups() {
+  streamSettings.groupsVisible = !(streamSettings.groupsVisible !== false);
+  saveStreamSettings();
+  applyGroupsVisibility();
+}
+
+function applyGroupsVisibility() {
+  const visible = streamSettings.groupsVisible !== false;
+  document.getElementById('categories').style.display = visible ? '' : 'none';
+  const btn = document.getElementById('groups-toggle');
+  btn.textContent = visible ? '▾' : '▸';
+  btn.style.color = visible ? 'var(--text3)' : 'var(--accent2)';
+}
+
 function toggleEPG() {
   streamSettings.epgVisible = !streamSettings.epgVisible;
   saveStreamSettings();
@@ -824,7 +843,7 @@ function applyEPGVisibility() {
   document.querySelector('.epg-panel').style.display = visible ? '' : 'none';
   document.getElementById('epg-resizer').style.display = visible ? '' : 'none';
   const btn = document.getElementById('epg-toggle-btn');
-  btn.classList.toggle('btn-accent', !visible);
+  btn.classList.toggle('btn-accent', visible);
 }
 
 function toggleCrop() {
@@ -917,6 +936,7 @@ function addToRecent(name) {
 // epg-date element removed
 document.getElementById('live-indicator').style.display = 'none';
 applyEPGVisibility();
+applyGroupsVisibility();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
@@ -927,6 +947,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
     else document.exitFullscreen().catch(() => {});
+  } else if (e.key === 'g' || e.key === 'G') {
+    toggleEPG();
   } else if (e.key === 'm' || e.key === 'M') {
     const video = document.getElementById('player');
     video.muted = !video.muted;
@@ -936,6 +958,13 @@ document.addEventListener('keydown', (e) => {
     const input = document.getElementById('search-input');
     input.focus();
     input.select();
+  } else if (e.key === 'c' || e.key === 'C') {
+    const input = document.getElementById('search-input');
+    input.value = '';
+    input.classList.remove('regex-error');
+    filterChannels();
+    input.focus();
+    e.preventDefault();
   }
 });
 
