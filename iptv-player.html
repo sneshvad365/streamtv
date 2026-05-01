@@ -965,6 +965,18 @@ document.addEventListener('keydown', (e) => {
     filterChannels();
     input.focus();
     e.preventDefault();
+  } else if (e.key === 'h' || e.key === 'H') {
+    const sidebar = document.querySelector('.sidebar');
+    const topbar = document.querySelector('.topbar');
+    const sideResizer = document.getElementById('sidebar-resizer');
+    const epgPanel = document.querySelector('.epg-panel');
+    const epgResizer = document.getElementById('epg-resizer');
+    const hidden = sidebar.style.display === 'none';
+    sidebar.style.display = hidden ? '' : 'none';
+    topbar.style.display = hidden ? '' : 'none';
+    if (sideResizer) sideResizer.style.display = hidden ? '' : 'none';
+    if (epgPanel && streamSettings.epgVisible !== false) epgPanel.style.display = hidden ? '' : 'none';
+    if (epgResizer && streamSettings.epgVisible !== false) epgResizer.style.display = hidden ? '' : 'none';
   }
 });
 
