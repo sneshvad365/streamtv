@@ -952,6 +952,10 @@ function playChannel(ch) {
       liveCatchUpPlaybackRate: 0,
       maxLiveSyncPlaybackRate: 1,
     });
+    // Hard cap: if hls.js changes playbackRate through any code path, reset it immediately
+    const enforceRate = () => { if (video.playbackRate !== 1) video.playbackRate = 1; };
+    video.addEventListener('ratechange', enforceRate);
+    _hls.on(Hls.Events.DESTROYING, () => video.removeEventListener('ratechange', enforceRate));
     _hls.loadSource(streamUrl);
     _hls.attachMedia(video);
     _hls.on(Hls.Events.MANIFEST_PARSED, () => {
