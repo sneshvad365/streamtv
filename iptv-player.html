@@ -102,6 +102,15 @@
   .play-icon { width: 60px; height: 60px; background: rgba(108,99,255,0.25); border: 2px solid rgba(108,99,255,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .overlay-text { font-size: 14px; color: rgba(255,255,255,0.5); }
   .np-overlay { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
+  .vol-overlay { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 3; min-width: 160px; }
+  .stream-info { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 8px 12px; font-size: 11px; font-family: 'DM Mono', monospace; pointer-events: none; display: none; z-index: 2; line-height: 2; }
+  .si-row { display: flex; justify-content: space-between; gap: 20px; }
+  .si-key { color: rgba(255,255,255,0.35); }
+  .si-val { color: rgba(255,255,255,0.9); }
+  .vol-overlay.show { opacity: 1; }
+  .vol-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+  .vol-fill { height: 100%; background: #fff; border-radius: 2px; transition: width 0.1s; }
+  .vol-label { font-size: 11px; color: #fff; font-family: 'DM Mono', monospace; min-width: 38px; text-align: right; }
 
   /* EPG */
   .epg-panel { height: var(--epg-h); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
@@ -184,7 +193,7 @@
     .topbar-actions { padding: 0 8px; gap: 5px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #pip-btn { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn { display: none !important; }
 
     .main { flex-direction: column; }
     .sidebar { width: 100%; flex: 1; border-right: none; }
@@ -232,7 +241,6 @@
     </div>
     <div style="flex:1"></div>
     <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
-    <button class="btn" id="pip-btn" onclick="togglePiP()" style="display:none" title="Picture in picture [I]">⧉ PiP</button>
     <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
     <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
@@ -275,6 +283,12 @@
         <div class="overlay-text">Select a channel to start watching</div>
       </div>
       <div class="np-overlay" id="np-overlay"></div>
+      <div class="stream-info" id="stream-info"></div>
+      <div class="vol-overlay" id="vol-overlay">
+        <span style="font-size:10px;color:rgba(255,255,255,0.5);font-family:'DM Mono',monospace;letter-spacing:0.05em">VOL</span>
+        <div class="vol-bar"><div class="vol-fill" id="vol-fill" style="width:100%"></div></div>
+        <span class="vol-label" id="vol-label">100%</span>
+      </div>
     </div>
     <div class="resizer resizer-h" id="epg-resizer"></div>
     <!-- EPG -->
@@ -908,29 +922,68 @@ function playPrevious() {
   if (previousChannel) playChannel(previousChannel);
 }
 
-function togglePiP() {
-  const video = document.getElementById('player');
-  if (document.pictureInPictureElement) {
-    document.exitPictureInPicture().catch(() => {});
+let _infoInterval = null;
+
+function toggleStreamInfo() {
+  const el = document.getElementById('stream-info');
+  if (el.style.display === 'block') {
+    el.style.display = 'none';
+    clearInterval(_infoInterval);
+    _infoInterval = null;
   } else {
-    video.requestPictureInPicture().catch(() => {});
+    el.style.display = 'block';
+    updateStreamInfo();
+    _infoInterval = setInterval(updateStreamInfo, 1000);
   }
 }
 
-document.getElementById('player').addEventListener('enterpictureinpicture', () => {
-  document.getElementById('pip-btn').classList.add('btn-accent');
-});
-document.getElementById('player').addEventListener('leavepictureinpicture', () => {
-  document.getElementById('pip-btn').classList.remove('btn-accent');
-});
+function updateStreamInfo() {
+  const el = document.getElementById('stream-info');
+  const video = document.getElementById('player');
+  const rows = [];
+
+  if (video.videoWidth && video.videoHeight)
+    rows.push(['Res', `${video.videoWidth}×${video.videoHeight}`]);
+
+  if (_hls) {
+    const bw = _hls.bandwidthEstimate;
+    if (bw > 0) rows.push(['BW', `${(bw / 1000000).toFixed(2)} Mbps`]);
+    const lvl = _hls.levels?.[_hls.currentLevel];
+    if (lvl?.bitrate) rows.push(['Level', `${(lvl.bitrate / 1000).toFixed(0)} kbps`]);
+  }
+
+  const q = video.getVideoPlaybackQuality?.();
+  if (q) rows.push(['Dropped', `${q.droppedVideoFrames} / ${q.totalVideoFrames}`]);
+
+  el.innerHTML = rows.map(([k, v]) =>
+    `<div class="si-row"><span class="si-key">${k}</span><span class="si-val">${v}</span></div>`
+  ).join('');
+}
+
+let _volTimer = null;
+function showVolumeOverlay() {
+  const video = document.getElementById('player');
+  const pct = video.muted ? 0 : Math.round(video.volume * 100);
+  document.getElementById('vol-fill').style.width = pct + '%';
+  document.getElementById('vol-label').textContent = video.muted ? 'Muted' : pct + '%';
+  const overlay = document.getElementById('vol-overlay');
+  overlay.classList.add('show');
+  clearTimeout(_volTimer);
+  _volTimer = setTimeout(() => overlay.classList.remove('show'), 1500);
+}
+
+function adjustVolume(delta) {
+  const video = document.getElementById('player');
+  video.volume = Math.max(0, Math.min(1, video.volume + delta));
+  if (delta > 0 && video.muted) video.muted = false;
+  showVolumeOverlay();
+}
 
 function playChannel(ch) {
-  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   if (currentChannel && currentChannel !== ch) {
     previousChannel = currentChannel;
     document.getElementById('prev-btn').style.display = '';
   }
-  if (document.pictureInPictureEnabled) document.getElementById('pip-btn').style.display = '';
   document.getElementById('crop-btn').style.display = '';
   applyPersistedCrop();
   currentChannel = ch;
@@ -948,6 +1001,8 @@ function playChannel(ch) {
   // Tear down any previous hls.js instance
   if (_hls) { _hls.destroy(); _hls = null; }
   video.removeAttribute('src');
+  document.getElementById('stream-info').style.display = 'none';
+  clearInterval(_infoInterval); _infoInterval = null;
 
   if (ch.isVod) {
     // VOD files (mp4/mkv) — stream directly through the proxy, no HLS detection needed
@@ -1020,6 +1075,13 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'm' || e.key === 'M') {
     const video = document.getElementById('player');
     video.muted = !video.muted;
+    showVolumeOverlay();
+  } else if (e.key === 'i' || e.key === 'I') {
+    if (currentChannel) toggleStreamInfo();
+  } else if (e.key === 'ArrowUp') {
+    adjustVolume(0.1); e.preventDefault();
+  } else if (e.key === 'ArrowDown') {
+    adjustVolume(-0.1); e.preventDefault();
   } else if (e.key === 'p' || e.key === 'P') {
     playPrevious();
   } else if (e.key === 's' || e.key === 'S') {
@@ -1033,8 +1095,6 @@ document.addEventListener('keydown', (e) => {
     filterChannels();
     input.focus();
     e.preventDefault();
-  } else if (e.key === 'i' || e.key === 'I') {
-    if (currentChannel) togglePiP();
   } else if (e.key === 'h' || e.key === 'H') {
     const sidebar = document.querySelector('.sidebar');
     const topbar = document.querySelector('.topbar');
