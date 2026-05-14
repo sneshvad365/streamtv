@@ -86,7 +86,6 @@
   .ch-info { flex: 1; min-width: 0; }
   .ch-name { font-size: 11px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ch-meta { font-size: 11px; color: var(--text3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ch-now { font-size: 10px; color: var(--accent2); font-family: 'DM Mono', monospace; }
   .fav-btn { position: absolute; bottom: -3px; right: -3px; width: 15px; height: 15px; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; color: var(--text3); cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
   .fav-btn.active { color: var(--amber); opacity: 1; }
   .channel-item:hover .fav-btn { opacity: 1; }
@@ -225,7 +224,7 @@
       <input type="text" id="group-search-input" placeholder="Filter groups…" value="all.">
       <span class="regex-toggle" id="group-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('group')">.*</span>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;" id="live-indicator" style="display:none">
+    <div id="live-indicator" style="display:none;align-items:center;gap:8px;">
       <div class="live-dot"></div>
       <span class="live-label">LIVE</span>
       <span style="color:var(--border2)">·</span>
@@ -648,7 +647,7 @@ async function loadPlaylist() {
     setStatus('Parsing channels…', false);
     parseM3U(text);
     setProgress(80);
-    if (epgUrl) { setStatus('Loading EPG guide…', false); await loadEPG(proxyUrl(epgUrl)); }
+    if (epgUrl) { setStatus('Loading EPG guide…', false); await loadEPG(epgUrl); }
     setProgress(100);
     setStatus(`Loaded ${channels.length} channels`, false);
     setTimeout(hideSetup, 800);
@@ -985,14 +984,11 @@ function addToRecent(name) {
   saveRecent();
 }
 
-// epg-date element removed
-document.getElementById('live-indicator').style.display = 'none';
 applyEPGVisibility();
 applyGroupsVisibility();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
-
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -1095,8 +1091,7 @@ async function refreshChannels() {
     renderSidebar();
     setProgress(80);
     setStatus('Refreshing movies…', false);
-    const apiBase2 = `${host}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    await fetchVodData(host, username, password, apiBase2);
+    await fetchVodData(host, username, password, apiBase);
     setProgress(100);
     const savedAt = new Date().toISOString();
     await saveCache({ channels, vodItems, account: { host, username, password }, savedAt });

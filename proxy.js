@@ -1,6 +1,5 @@
 // stream. — local IPTV proxy
 // Run: node proxy.js
-// Requires Node.js 18+ (uses built-in fetch)
 
 const http = require('http');
 const https = require('https');
@@ -8,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3001;
-const TIMEOUT = 60000; // 60s for large playlists
+const TIMEOUT = 60000;
+const CACHE_FILE = path.join(__dirname, 'channel-cache.json');
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -52,41 +52,9 @@ function rewriteHlsBody(body, finalUrl) {
     if (!t || t.startsWith('#')) return line;
     try {
       const abs = new URL(t, finalUrl).toString();
-      return `http://localhost:${PORT}/proxy?url=${encodeURIComponent(abs)}`;
+      return `http://127.0.0.1:${PORT}/proxy?url=${encodeURIComponent(abs)}`;
     } catch { return line; }
   }).join('\n');
-}
-
-// Fetch a URL following redirects, return { finalUrl, statusCode, body }
-function fetchWithRedirects(targetUrl, depth = 0) {
-  return new Promise((resolve, reject) => {
-    if (depth > 5) { reject(new Error('Too many redirects')); return; }
-    const parsed = new URL(targetUrl);
-    const lib = parsed.protocol === 'https:' ? https : http;
-    const req = lib.request({
-      hostname: parsed.hostname,
-      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-      path: parsed.pathname + parsed.search,
-      method: 'GET',
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      timeout: TIMEOUT,
-      rejectUnauthorized: false,
-    }, (upstream) => {
-      if ([301, 302, 307, 308].includes(upstream.statusCode) && upstream.headers.location) {
-        upstream.resume();
-        const next = new URL(upstream.headers.location, targetUrl).toString();
-        fetchWithRedirects(next, depth + 1).then(resolve).catch(reject);
-        return;
-      }
-      const chunks = [];
-      upstream.on('data', c => chunks.push(c));
-      upstream.on('end', () => resolve({ finalUrl: targetUrl, statusCode: upstream.statusCode, body: Buffer.concat(chunks).toString() }));
-      upstream.on('error', reject);
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    req.end();
-  });
 }
 
 function makeRequest(targetUrl, res, clientReq = null, depth = 0) {
@@ -178,8 +146,6 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ ok: true, port: PORT }));
     return;
   }
-
-  const CACHE_FILE = path.join(__dirname, 'channel-cache.json');
 
   // GET /cache — return cached channel list
   if (req.method === 'GET' && parsed.pathname === '/cache') {
