@@ -188,23 +188,53 @@
   body.dragging-v, body.dragging-v * { cursor: col-resize !important; user-select: none; }
 
   @media (max-width: 768px) {
-    .logo { width: auto; padding: 0 10px; border-right: none; }
+    /* Topbar */
+    .logo { width: auto; padding: 0 12px; border-right: none; }
     .logo-text { display: none; }
-    .topbar-actions { padding: 0 8px; gap: 5px; }
+    .topbar-actions { padding: 0 8px; gap: 6px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #epg-toggle-btn { display: none !important; }
+    .topbar { height: calc(48px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px); }
 
+    /* Layout — video on top, list below */
     .main { flex-direction: column; }
-    .sidebar { width: 100%; flex: 1; border-right: none; }
+    .sidebar { width: 100%; flex: 1; min-height: 0; overflow: hidden; border-right: none; }
     .resizer-v { display: none; }
 
-    .player-area { flex: none; height: calc(100vw * 9 / 16); min-height: 160px; max-height: 38vh; }
+    /* Video — 16:9 strip */
+    .player-area { flex: none; height: calc(100vw * 9 / 16); min-height: 160px; max-height: 40vh; }
 
+    /* Tabs — taller tap targets */
+    .tab { padding: 12px 0; font-size: 13px; }
+
+    /* Category pills — horizontal scroll */
     .categories { flex-wrap: nowrap; overflow-x: auto; padding: 6px 8px; }
     .categories::-webkit-scrollbar { display: none; }
+    .cat-pill { padding: 5px 12px; font-size: 12px; flex-shrink: 0; }
 
+    /* EPG */
     .epg-panel, #epg-resizer { display: none !important; }
+
+    /* Modal — bottom sheet */
+    .modal-bg { align-items: flex-end; padding: 0; }
+    .modal { border-radius: 20px 20px 0 0; width: 100% !important; max-width: 100% !important; max-height: 90dvh; overflow: hidden; display: flex; flex-direction: column; }
+    .modal-head { padding: 20px 20px 14px; }
+    .modal-body { overflow-y: auto; flex: 1; padding: 16px 20px; }
+    .modal-foot { padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); }
+
+    /* Xtream username/password fields — stack vertically */
+    .xtream-fields-grid { grid-template-columns: 1fr !important; }
+  }
+
+  /* Landscape phone — side-by-side */
+  @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+    .main { flex-direction: row; }
+    .player-area { flex: 1; height: auto; max-height: none; min-height: 0; }
+    .sidebar { width: 260px; flex: none; min-height: 0; }
+    .resizer-v { display: none; }
+    .topbar { height: 40px; }
+    .tab { padding: 8px 0; }
   }
 </style>
 </head>
@@ -320,7 +350,7 @@
             <label>Server URL</label>
             <input type="url" id="xtream-host" placeholder="http://your-provider.com:8080" value="http://cf.voraxtv.space" autocomplete="off">
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div class="xtream-fields-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
             <div class="field">
               <label>Username</label>
               <input type="text" id="xtream-user" placeholder="username" autocomplete="off">
@@ -329,6 +359,10 @@
               <label>Password</label>
               <input type="password" id="xtream-pass" placeholder="password" autocomplete="off">
             </div>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>Proxy address <span style="font-size:10px;color:var(--text3);font-weight:400">(IP of the machine running proxy.js)</span></label>
+            <input type="text" id="proxy-host" placeholder="localhost" value="localhost" autocomplete="off" style="font-family:'DM Mono',monospace;font-size:13px">
           </div>
           <div class="xtream-info-box" style="flex-direction:column;gap:8px">
             <div style="display:flex;gap:8px;align-items:flex-start">
@@ -501,6 +535,7 @@ function fillXtreamForm(acc) {
   document.getElementById('xtream-host').value = acc.host;
   document.getElementById('xtream-user').value = acc.username;
   document.getElementById('xtream-pass').value = acc.password;
+  if (acc.proxyIp) document.getElementById('proxy-host').value = acc.proxyIp;
 }
 
 // DEMO LIST
@@ -524,7 +559,7 @@ function showSetup() {
 }
 function hideSetup() { document.getElementById('modal-bg').classList.add('hidden'); }
 
-const LOCAL_PROXY = 'http://localhost:3001';
+let LOCAL_PROXY = 'http://localhost:3001';
 let useLocalProxy = false;
 
 async function checkLocalProxy() {
@@ -560,6 +595,8 @@ async function connectXtream() {
   const pass = document.getElementById('xtream-pass').value.trim();
   if (!host || !user || !pass) { alert('Please fill in all fields.'); return; }
   if (!host.startsWith('http')) host = 'http://' + host;
+  const proxyIp = (document.getElementById('proxy-host').value.trim() || 'localhost');
+  LOCAL_PROXY = `http://${proxyIp}:3001`;
   showStep2();
   setStatus('Checking local proxy…', false);
   setProgress(5);
@@ -622,7 +659,7 @@ async function connectXtream() {
     await loadEPG(epgUrl);
     setProgress(100);
     const saved = savedAccounts.find(a => a.host === host && a.username === user);
-    if (!saved) { savedAccounts.unshift({ host, username: user, password: pass }); saveAccounts(); }
+    if (!saved) { savedAccounts.unshift({ host, username: user, password: pass, proxyIp: document.getElementById('proxy-host').value.trim() || 'localhost' }); saveAccounts(); }
     const savedAt = new Date().toISOString();
     await saveCache({ channels, vodItems, account: { host, username: user, password: pass }, savedAt });
     showCacheBadge(savedAt);
@@ -1116,7 +1153,7 @@ document.getElementById('group-search-input').addEventListener('input', debounce
 
 async function saveCache(data) {
   try {
-    await fetch('http://localhost:3001/cache', {
+    await fetch(LOCAL_PROXY + '/cache', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -1126,7 +1163,7 @@ async function saveCache(data) {
 
 async function loadCache() {
   try {
-    const res = await fetch('http://localhost:3001/cache');
+    const res = await fetch(LOCAL_PROXY + '/cache');
     if (!res.ok) return null;
     return await res.json();
   } catch(e) { return null; }

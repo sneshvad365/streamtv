@@ -275,10 +275,15 @@ const server = http.createServer((req, res) => {
   res.end('Not found');
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, '0.0.0.0', () => {
+  const os = require('os');
+  const localIp = Object.values(os.networkInterfaces())
+    .flat()
+    .find(i => i.family === 'IPv4' && !i.internal)?.address || 'your-ip';
   console.log('');
   console.log('  stream. proxy running');
-  console.log('  ➜  http://localhost:' + PORT);
+  console.log('  ➜  http://localhost:' + PORT + '  (this machine)');
+  console.log('  ➜  http://' + localIp + ':' + PORT + '  (other devices)');
   console.log('  Press Ctrl+C to stop');
   console.log('');
 });
