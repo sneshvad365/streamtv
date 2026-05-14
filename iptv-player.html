@@ -925,6 +925,7 @@ document.getElementById('player').addEventListener('leavepictureinpicture', () =
 });
 
 function playChannel(ch) {
+  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   if (currentChannel && currentChannel !== ch) {
     previousChannel = currentChannel;
     document.getElementById('prev-btn').style.display = '';
