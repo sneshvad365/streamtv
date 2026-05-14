@@ -949,7 +949,8 @@ function playChannel(ch) {
       maxBufferLength: preset.maxBufferLength,
       maxMaxBufferLength: preset.maxBufferLength,
       liveSyncDurationCount: preset.liveSyncDurationCount,
-      liveCatchUpPlaybackRate: 0,  // prevent hls.js from speeding up to reach live edge
+      liveCatchUpPlaybackRate: 0,
+      maxLiveSyncPlaybackRate: 1,
     });
     _hls.loadSource(streamUrl);
     _hls.attachMedia(video);
