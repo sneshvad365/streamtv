@@ -362,7 +362,7 @@
           </div>
           <div class="field" style="margin-bottom:12px">
             <label>Proxy address <span style="font-size:10px;color:var(--text3);font-weight:400">(IP of the machine running proxy.js)</span></label>
-            <input type="text" id="proxy-host" placeholder="localhost" value="localhost" autocomplete="off" style="font-family:'DM Mono',monospace;font-size:13px">
+            <input type="text" id="proxy-host" placeholder="localhost" autocomplete="off" style="font-family:'DM Mono',monospace;font-size:13px">
           </div>
           <div class="xtream-info-box" style="flex-direction:column;gap:8px">
             <div style="display:flex;gap:8px;align-items:flex-start">
@@ -559,7 +559,9 @@ function showSetup() {
 }
 function hideSetup() { document.getElementById('modal-bg').classList.add('hidden'); }
 
-let LOCAL_PROXY = 'http://localhost:3001';
+const _autoProxyIp = (window.location.hostname === '' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'localhost' : window.location.hostname;
+document.getElementById('proxy-host').value = _autoProxyIp;
+let LOCAL_PROXY = `http://${_autoProxyIp}:3001`;
 let useLocalProxy = false;
 
 async function checkLocalProxy() {

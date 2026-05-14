@@ -46,13 +46,13 @@ function resolveUrl(targetUrl, depth = 0) {
   });
 }
 
-function rewriteHlsBody(body, finalUrl) {
+function rewriteHlsBody(body, finalUrl, proxyHost) {
   return body.split('\n').map(line => {
     const t = line.trim();
     if (!t || t.startsWith('#')) return line;
     try {
       const abs = new URL(t, finalUrl).toString();
-      return `http://127.0.0.1:${PORT}/proxy?url=${encodeURIComponent(abs)}`;
+      return `http://${proxyHost}/proxy?url=${encodeURIComponent(abs)}`;
     } catch { return line; }
   }).join('\n');
 }
@@ -198,13 +198,15 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    const proxyHost = req.headers.host || `127.0.0.1:${PORT}`;
+
     resolveUrl(target).then(({ finalUrl, upstream }) => {
       const ct = upstream.headers['content-type'] || '';
       let sent = false;
 
       const redirect = () => {
         if (sent) return; sent = true;
-        res.writeHead(302, { ...CORS_HEADERS, 'Location': `http://localhost:${PORT}/proxy?url=${encodeURIComponent(finalUrl)}` });
+        res.writeHead(302, { ...CORS_HEADERS, 'Location': `http://${proxyHost}/proxy?url=${encodeURIComponent(finalUrl)}` });
         res.end();
       };
 
@@ -237,7 +239,7 @@ const server = http.createServer((req, res) => {
         const body = Buffer.concat(chunks).toString('utf8');
         if (body.trimStart().startsWith('#EXTM3U') || body.includes('#EXT-X-TARGETDURATION')) {
           res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/x-mpegURL' });
-          res.end(rewriteHlsBody(body, finalUrl));
+          res.end(rewriteHlsBody(body, finalUrl, proxyHost));
         } else {
           redirect();
         }
