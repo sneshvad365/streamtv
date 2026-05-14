@@ -103,8 +103,6 @@
   .play-icon { width: 60px; height: 60px; background: rgba(108,99,255,0.25); border: 2px solid rgba(108,99,255,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .overlay-text { font-size: 14px; color: rgba(255,255,255,0.5); }
   .np-overlay { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
-  .skip-flash { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 7px 16px; font-size: 15px; font-weight: 600; color: #fff; pointer-events: none; opacity: 0; transition: opacity 0.25s; z-index: 4; font-family: 'DM Mono', monospace; }
-  .skip-flash.show { opacity: 1; }
 
   /* EPG */
   .epg-panel { height: var(--epg-h); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
@@ -187,7 +185,7 @@
     .topbar-actions { padding: 0 8px; gap: 5px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #skip-back-btn, #skip-fwd-btn { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn { display: none !important; }
 
     .main { flex-direction: column; }
     .sidebar { width: 100%; flex: 1; border-right: none; }
@@ -236,8 +234,6 @@
     <div style="flex:1"></div>
     <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
     <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
-    <button class="btn" id="skip-back-btn" onclick="skipBy(-10)" style="display:none" title="Skip back 10s [←]">−10s</button>
-    <button class="btn" id="skip-fwd-btn" onclick="skipBy(10)" style="display:none" title="Skip forward 10s [→]">+10s</button>
     <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
@@ -279,7 +275,6 @@
         <div class="overlay-text">Select a channel to start watching</div>
       </div>
       <div class="np-overlay" id="np-overlay"></div>
-      <div class="skip-flash" id="skip-flash"></div>
     </div>
     <div class="resizer resizer-h" id="epg-resizer"></div>
     <!-- EPG -->
@@ -919,8 +914,6 @@ function playChannel(ch) {
     document.getElementById('prev-btn').style.display = '';
   }
   document.getElementById('crop-btn').style.display = '';
-  document.getElementById('skip-back-btn').style.display = ch.isVod ? '' : 'none';
-  document.getElementById('skip-fwd-btn').style.display  = ch.isVod ? '' : 'none';
   applyPersistedCrop();
   currentChannel = ch;
   const video = document.getElementById('player');
@@ -938,29 +931,10 @@ function playChannel(ch) {
   if (_hls) { _hls.destroy(); _hls = null; }
   video.removeAttribute('src');
 
-  // VOD playback — /hls auto-detects HLS vs direct video:
-  //   HLS  → proxy rewrites manifest, hls.js seeks via segment selection (no Range needed)
-  //   Video → proxy 302s to /proxy, browser streams directly, seeks via Range
   if (ch.isVod) {
-    const hlsUrl    = useLocalProxy ? `${LOCAL_PROXY}/hls?url=${encodeURIComponent(ch.url)}`   : ch.url;
-    const directUrl = useLocalProxy ? `${LOCAL_PROXY}/proxy?url=${encodeURIComponent(ch.url)}` : ch.url;
-    if (Hls.isSupported()) {
-      _hls = new Hls({ enableWorker: true, maxBufferLength: 30, maxMaxBufferLength: 60, liveCatchUpPlaybackRate: 0 });
-      _hls.loadSource(hlsUrl);
-      _hls.attachMedia(video);
-      _hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-      _hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          // Not an HLS manifest — fall back to native video (direct mp4/mkv)
-          _hls.destroy(); _hls = null;
-          video.src = directUrl;
-          video.play().catch(() => {});
-        }
-      });
-    } else {
-      video.src = directUrl;
-      video.play().catch(() => {});
-    }
+    // VOD files (mp4/mkv) — stream directly through the proxy, no HLS detection needed
+    video.src = useLocalProxy ? `${LOCAL_PROXY}/proxy?url=${encodeURIComponent(ch.url)}` : ch.url;
+    video.play().catch(() => {});
     return;
   }
 
@@ -1011,55 +985,6 @@ function addToRecent(name) {
   saveRecent();
 }
 
-let _skipTimer = null;
-
-function skipBy(secs) {
-  const video = document.getElementById('player');
-
-  // Cancel any in-progress fast-forward
-  if (_skipTimer) {
-    clearInterval(_skipTimer);
-    _skipTimer = null;
-    video.playbackRate = 1;
-    if (video._skipMuted !== undefined) { video.muted = video._skipMuted; delete video._skipMuted; }
-  }
-
-  const flash = document.getElementById('skip-flash');
-  flash.textContent = (secs > 0 ? '+' : '') + secs + 's';
-  flash.classList.add('show');
-  clearTimeout(flash._t);
-  flash._t = setTimeout(() => flash.classList.remove('show'), 800);
-
-  if (_hls) {
-    // hls.js active — it handles seeking via segment selection, no Range needed
-    const dur = video.duration;
-    video.currentTime = isFinite(dur)
-      ? Math.max(0, Math.min(dur, video.currentTime + secs))
-      : Math.max(0, video.currentTime + secs);
-    return;
-  }
-
-  // Direct video stream — server likely doesn't support Range requests.
-  // Fast-forward via playbackRate to avoid triggering a Range seek that would restart.
-  if (secs > 0) {
-    const target = video.currentTime + secs;
-    video._skipMuted = video.muted;
-    video.muted = true;
-    video.playbackRate = 8;
-    _skipTimer = setInterval(() => {
-      if (video.currentTime >= target || video.paused || video.ended) {
-        clearInterval(_skipTimer); _skipTimer = null;
-        video.playbackRate = 1;
-        video.muted = video._skipMuted; delete video._skipMuted;
-      }
-    }, 80);
-  } else {
-    // Backward — try direct seek; browser may have it buffered
-    video.currentTime = Math.max(0, video.currentTime + secs);
-  }
-}
-
-
 // epg-date element removed
 document.getElementById('live-indicator').style.display = 'none';
 applyEPGVisibility();
@@ -1105,10 +1030,6 @@ document.addEventListener('keydown', (e) => {
     if (sideResizer) sideResizer.style.display = hidden ? '' : 'none';
     if (epgPanel && streamSettings.epgVisible !== false) epgPanel.style.display = hidden ? '' : 'none';
     if (epgResizer && streamSettings.epgVisible !== false) epgResizer.style.display = hidden ? '' : 'none';
-  } else if (e.key === 'ArrowRight' && currentChannel?.isVod) {
-    skipBy(e.shiftKey ? 30 : 10); e.preventDefault();
-  } else if (e.key === 'ArrowLeft' && currentChannel?.isVod) {
-    skipBy(e.shiftKey ? -30 : -10); e.preventDefault();
   }
 });
 

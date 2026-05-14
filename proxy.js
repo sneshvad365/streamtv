@@ -4,7 +4,6 @@
 
 const http = require('http');
 const https = require('https');
-const url = require('url');
 const fs = require('fs');
 const path = require('path');
 
@@ -157,7 +156,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const parsed = url.parse(req.url, true);
+  const parsed = new URL(req.url, `http://127.0.0.1:${PORT}`);
 
   // Serve the player UI at /
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
@@ -221,7 +220,7 @@ const server = http.createServer((req, res) => {
   //     video/* or audio/*                                  → 302 to /proxy (streaming + Range)
   //     ambiguous (octet-stream, text/*, empty)             → peek first bytes then decide
   if (req.method === 'GET' && parsed.pathname === '/hls') {
-    let target = parsed.query.url;
+    let target = parsed.searchParams.get('url');
     if (!target) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?url='); return; }
     if (target.endsWith('.ts') && !target.includes('/live/') && !target.includes('/hls/')) {
       target = target.replace(/\/([^/]+)\/([^/]+)\/(\d+)\.ts$/, '/live/$1/$2/$3.m3u8');
@@ -289,7 +288,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (parsed.pathname === '/proxy') {
-    const target = parsed.query.url;
+    const target = parsed.searchParams.get('url');
     if (!target) {
       res.writeHead(400, CORS_HEADERS);
       res.end('Missing ?url= parameter');
