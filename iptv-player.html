@@ -901,6 +901,7 @@ function playChannel(ch) {
       maxBufferLength: preset.maxBufferLength,
       maxMaxBufferLength: preset.maxBufferLength,
       liveSyncDurationCount: preset.liveSyncDurationCount,
+      liveCatchUpPlaybackRate: 0,  // prevent hls.js from speeding up to reach live edge
     });
     _hls.loadSource(streamUrl);
     _hls.attachMedia(video);
@@ -909,7 +910,10 @@ function playChannel(ch) {
       const target = preset.bufferTarget;
       function waitForBuffer() {
         if (_hls !== thisHls) return; // channel switched — abort
-        const buffered = video.buffered.length > 0 ? video.buffered.end(0) : 0;
+        // Use range size (end - start) not absolute end position — live streams have large timestamps
+        const buffered = video.buffered.length > 0
+          ? video.buffered.end(0) - video.buffered.start(0)
+          : 0;
         if (buffered >= target) { video.play().catch(() => {}); }
         else { requestAnimationFrame(waitForBuffer); }
       }
