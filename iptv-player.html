@@ -103,6 +103,8 @@
   .play-icon { width: 60px; height: 60px; background: rgba(108,99,255,0.25); border: 2px solid rgba(108,99,255,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .overlay-text { font-size: 14px; color: rgba(255,255,255,0.5); }
   .np-overlay { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
+  .skip-flash { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 7px 16px; font-size: 15px; font-weight: 600; color: #fff; pointer-events: none; opacity: 0; transition: opacity 0.25s; z-index: 4; font-family: 'DM Mono', monospace; }
+  .skip-flash.show { opacity: 1; }
 
   /* EPG */
   .epg-panel { height: var(--epg-h); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
@@ -185,7 +187,7 @@
     .topbar-actions { padding: 0 8px; gap: 5px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #skip-back-btn, #skip-fwd-btn { display: none !important; }
 
     .main { flex-direction: column; }
     .sidebar { width: 100%; flex: 1; border-right: none; }
@@ -234,6 +236,8 @@
     <div style="flex:1"></div>
     <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
     <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
+    <button class="btn" id="skip-back-btn" onclick="skipBy(-10)" style="display:none" title="Skip back 10s [←]">−10s</button>
+    <button class="btn" id="skip-fwd-btn" onclick="skipBy(10)" style="display:none" title="Skip forward 10s [→]">+10s</button>
     <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
@@ -251,6 +255,7 @@
       <div class="tab active" onclick="switchTab('all',this)">All</div>
       <div class="tab" onclick="switchTab('fav',this)">Favourites</div>
       <div class="tab" onclick="switchTab('recent',this)">Recent</div>
+      <div class="tab" onclick="switchTab('movies',this)">Movies</div>
       <div id="groups-toggle" onclick="toggleGroups()" title="Show/hide groups" style="padding:0 12px;display:flex;align-items:center;cursor:pointer;color:var(--text3);font-size:11px;border-left:1px solid var(--border);transition:color 0.15s;user-select:none;">▾</div>
     </div>
     <div class="categories" id="categories"></div>
@@ -274,6 +279,7 @@
         <div class="overlay-text">Select a channel to start watching</div>
       </div>
       <div class="np-overlay" id="np-overlay"></div>
+      <div class="skip-flash" id="skip-flash"></div>
     </div>
     <div class="resizer resizer-h" id="epg-resizer"></div>
     <!-- EPG -->
@@ -303,7 +309,7 @@
         <div id="panel-xtream">
           <div class="field" style="margin-bottom:12px">
             <label>Server URL</label>
-            <input type="url" id="xtream-host" placeholder="http://your-provider.com:8080" autocomplete="off">
+            <input type="url" id="xtream-host" placeholder="http://your-provider.com:8080" value="http://cf.voraxtv.space" autocomplete="off">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
             <div class="field">
@@ -418,6 +424,7 @@ function renderBufferOptions() {
 }
 
 let channels = [], filtered = [], favourites = new Set(JSON.parse(localStorage.getItem('stream-favs') || '[]'));
+let vodItems = [];
 let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null;
 let searchIsRegex = false, groupIsRegex = false;
 
@@ -597,6 +604,9 @@ async function connectXtream() {
       renderSidebar();
     }
 
+    setProgress(78);
+    setStatus('Loading movies…', false);
+    await fetchVodData(host, user, pass, apiBase);
     setProgress(85);
     const epgUrl = `${host}/xmltv.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`;
     setStatus('Loading TV guide…', false);
@@ -605,10 +615,10 @@ async function connectXtream() {
     const saved = savedAccounts.find(a => a.host === host && a.username === user);
     if (!saved) { savedAccounts.unshift({ host, username: user, password: pass }); saveAccounts(); }
     const savedAt = new Date().toISOString();
-    await saveCache({ channels, account: { host, username: user, password: pass }, savedAt });
+    await saveCache({ channels, vodItems, account: { host, username: user, password: pass }, savedAt });
     showCacheBadge(savedAt);
     const expiryStr = expiry ? ` · expires ${expiry}` : '';
-    setStatus(`Connected — ${channels.length} channels${expiryStr}`, false);
+    setStatus(`Connected — ${channels.length} channels · ${vodItems.length} movies${expiryStr}`, false);
     setTimeout(hideSetup, 1000);
   } catch(err) {
     const hint = !useLocalProxy ? ' — run proxy.js locally for best results' : '';
@@ -717,9 +727,36 @@ function parseXmltvDate(s) {
   return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`);
 }
 
+async function fetchVodData(host, user, pass, apiBase) {
+  try {
+    const [catsRes, streamsRes] = await Promise.all([
+      fetch(proxyUrl(apiBase + '&action=get_vod_categories')),
+      fetch(proxyUrl(apiBase + '&action=get_vod_streams')),
+    ]);
+    if (!catsRes.ok || !streamsRes.ok) return;
+    const cats = await catsRes.json();
+    const streams = await streamsRes.json();
+    if (!Array.isArray(streams)) return;
+    const catMap = {};
+    if (Array.isArray(cats)) cats.forEach(c => { catMap[c.category_id] = c.category_name; });
+    vodItems = streams.map(s => ({
+      name: s.name || '',
+      logo: s.stream_icon || '',
+      group: catMap[s.category_id] || 'Uncategorised',
+      tvgId: '',
+      rating: s.rating || '',
+      plot: s.plot || '',
+      containerExtension: s.container_extension || 'mp4',
+      url: `${host}/movie/${encodeURIComponent(user)}/${encodeURIComponent(pass)}/${s.stream_id}.${s.container_extension || 'mp4'}`,
+      isVod: true,
+    }));
+  } catch(e) { console.warn('VOD fetch failed', e); }
+}
+
 function renderSidebar() {
   const gq = (document.getElementById('group-search-input')?.value || '').trim();
-  const allGroups = ['All', ...new Set(channels.map(c => c.group))];
+  const sourceItems = currentTab === 'movies' ? vodItems : channels;
+  const allGroups = ['All', ...new Set(sourceItems.map(c => c.group))];
   const isShowAll = !gq || gq.toLowerCase() === 'all' || gq.toLowerCase() === 'all.';
   const groups = isShowAll ? allGroups : allGroups.filter(g => g === 'All' || matchStr(g, gq, groupIsRegex, 'group-search-input'));
   const catEl = document.getElementById('categories');
@@ -743,7 +780,9 @@ function buildChannelItem(ch) {
   const item = document.createElement('div');
   item.className = 'channel-item' + (currentChannel === ch ? ' active' : '');
   const isRecent = currentTab === 'recent';
-  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${ch.group}</div></div>`;
+  const meta = ch.isVod && ch.rating ? `★ ${parseFloat(ch.rating).toFixed(1)}` : ch.group;
+  item.title = ch.isVod && ch.plot ? ch.plot : '';
+  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${meta}</div></div>`;
   item.querySelector('.fav-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleFav(ch, item.querySelector('.fav-btn')); });
   if (isRecent) {
     item.querySelector('.ch-logo-wrap').addEventListener('click', (e) => { e.stopPropagation(); removeFromRecent(ch.name); });
@@ -783,11 +822,18 @@ function vsRender() {
 
 function renderChannels(resetScroll = false) {
   const q = document.getElementById('search-input').value;
-  let list = channels;
-  if (currentTab === 'fav') list = channels.filter(c => favourites.has(c.name));
-  if (currentTab === 'recent') list = recentChannels.map(n => channels.find(c => c.name === n)).filter(Boolean);
-  if (currentCat !== 'All' && currentTab === 'all') list = list.filter(c => c.group === currentCat);
-  if (q && currentTab === 'all') list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
+  let list;
+  if (currentTab === 'movies') {
+    list = vodItems;
+    if (currentCat !== 'All') list = list.filter(c => c.group === currentCat);
+    if (q) list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
+  } else {
+    list = channels;
+    if (currentTab === 'fav') list = channels.filter(c => favourites.has(c.name));
+    if (currentTab === 'recent') list = recentChannels.map(n => channels.find(c => c.name === n) || vodItems.find(c => c.name === n)).filter(Boolean);
+    if (currentCat !== 'All' && currentTab === 'all') list = list.filter(c => c.group === currentCat);
+    if (q && currentTab === 'all') list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
+  }
   filtered = list;
   if (resetScroll) document.getElementById('channel-list').scrollTop = 0;
   vsRender();
@@ -811,9 +857,10 @@ function filterChannels() { renderChannels(true); }
 
 function switchTab(tab, el) {
   currentTab = tab;
+  currentCat = 'All';
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  renderChannels(true);
+  renderSidebar();
 }
 
 let _hls = null;
@@ -872,6 +919,8 @@ function playChannel(ch) {
     document.getElementById('prev-btn').style.display = '';
   }
   document.getElementById('crop-btn').style.display = '';
+  document.getElementById('skip-back-btn').style.display = ch.isVod ? '' : 'none';
+  document.getElementById('skip-fwd-btn').style.display  = ch.isVod ? '' : 'none';
   applyPersistedCrop();
   currentChannel = ch;
   const video = document.getElementById('player');
@@ -883,11 +932,37 @@ function playChannel(ch) {
   document.getElementById('topbar-channel').textContent = ch.name;
   renderChannels();
   addToRecent(ch.name);
-  renderEPG(ch);
+  if (!ch.isVod) renderEPG(ch);
 
   // Tear down any previous hls.js instance
   if (_hls) { _hls.destroy(); _hls = null; }
   video.removeAttribute('src');
+
+  // VOD playback — /hls auto-detects HLS vs direct video:
+  //   HLS  → proxy rewrites manifest, hls.js seeks via segment selection (no Range needed)
+  //   Video → proxy 302s to /proxy, browser streams directly, seeks via Range
+  if (ch.isVod) {
+    const hlsUrl    = useLocalProxy ? `${LOCAL_PROXY}/hls?url=${encodeURIComponent(ch.url)}`   : ch.url;
+    const directUrl = useLocalProxy ? `${LOCAL_PROXY}/proxy?url=${encodeURIComponent(ch.url)}` : ch.url;
+    if (Hls.isSupported()) {
+      _hls = new Hls({ enableWorker: true, maxBufferLength: 30, maxMaxBufferLength: 60, liveCatchUpPlaybackRate: 0 });
+      _hls.loadSource(hlsUrl);
+      _hls.attachMedia(video);
+      _hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      _hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          // Not an HLS manifest — fall back to native video (direct mp4/mkv)
+          _hls.destroy(); _hls = null;
+          video.src = directUrl;
+          video.play().catch(() => {});
+        }
+      });
+    } else {
+      video.src = directUrl;
+      video.play().catch(() => {});
+    }
+    return;
+  }
 
   const streamUrl = useLocalProxy
     ? `${LOCAL_PROXY}/hls?url=${encodeURIComponent(ch.url)}`
@@ -936,6 +1011,54 @@ function addToRecent(name) {
   saveRecent();
 }
 
+let _skipTimer = null;
+
+function skipBy(secs) {
+  const video = document.getElementById('player');
+
+  // Cancel any in-progress fast-forward
+  if (_skipTimer) {
+    clearInterval(_skipTimer);
+    _skipTimer = null;
+    video.playbackRate = 1;
+    if (video._skipMuted !== undefined) { video.muted = video._skipMuted; delete video._skipMuted; }
+  }
+
+  const flash = document.getElementById('skip-flash');
+  flash.textContent = (secs > 0 ? '+' : '') + secs + 's';
+  flash.classList.add('show');
+  clearTimeout(flash._t);
+  flash._t = setTimeout(() => flash.classList.remove('show'), 800);
+
+  if (_hls) {
+    // hls.js active — it handles seeking via segment selection, no Range needed
+    const dur = video.duration;
+    video.currentTime = isFinite(dur)
+      ? Math.max(0, Math.min(dur, video.currentTime + secs))
+      : Math.max(0, video.currentTime + secs);
+    return;
+  }
+
+  // Direct video stream — server likely doesn't support Range requests.
+  // Fast-forward via playbackRate to avoid triggering a Range seek that would restart.
+  if (secs > 0) {
+    const target = video.currentTime + secs;
+    video._skipMuted = video.muted;
+    video.muted = true;
+    video.playbackRate = 8;
+    _skipTimer = setInterval(() => {
+      if (video.currentTime >= target || video.paused || video.ended) {
+        clearInterval(_skipTimer); _skipTimer = null;
+        video.playbackRate = 1;
+        video.muted = video._skipMuted; delete video._skipMuted;
+      }
+    }, 80);
+  } else {
+    // Backward — try direct seek; browser may have it buffered
+    video.currentTime = Math.max(0, video.currentTime + secs);
+  }
+}
+
 
 // epg-date element removed
 document.getElementById('live-indicator').style.display = 'none';
@@ -944,6 +1067,7 @@ applyGroupsVisibility();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
+
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -981,6 +1105,10 @@ document.addEventListener('keydown', (e) => {
     if (sideResizer) sideResizer.style.display = hidden ? '' : 'none';
     if (epgPanel && streamSettings.epgVisible !== false) epgPanel.style.display = hidden ? '' : 'none';
     if (epgResizer && streamSettings.epgVisible !== false) epgResizer.style.display = hidden ? '' : 'none';
+  } else if (e.key === 'ArrowRight' && currentChannel?.isVod) {
+    skipBy(e.shiftKey ? 30 : 10); e.preventDefault();
+  } else if (e.key === 'ArrowLeft' && currentChannel?.isVod) {
+    skipBy(e.shiftKey ? -30 : -10); e.preventDefault();
   }
 });
 
@@ -1044,11 +1172,15 @@ async function refreshChannels() {
       url: `${host}/live/${encodeURIComponent(username)}/${encodeURIComponent(password)}/${s.stream_id}.m3u8`,
     }));
     renderSidebar();
+    setProgress(80);
+    setStatus('Refreshing movies…', false);
+    const apiBase2 = `${host}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    await fetchVodData(host, username, password, apiBase2);
     setProgress(100);
     const savedAt = new Date().toISOString();
-    await saveCache({ channels, account: { host, username, password }, savedAt });
+    await saveCache({ channels, vodItems, account: { host, username, password }, savedAt });
     showCacheBadge(savedAt);
-    setStatus(`Refreshed — ${channels.length} channels`, false);
+    setStatus(`Refreshed — ${channels.length} channels · ${vodItems.length} movies`, false);
     setTimeout(hideSetup, 800);
   } catch(err) {
     setStatus('Refresh failed: ' + err.message, true);
@@ -1156,6 +1288,7 @@ function generateDemoEPG(name) {
   const cache = await loadCache();
   if (cache && cache.channels && cache.channels.length > 0) {
     channels = cache.channels;
+    if (cache.vodItems) vodItems = cache.vodItems;
     if (cache.account) {
       savedAccounts = savedAccounts.filter(a => a.host !== cache.account.host || a.username !== cache.account.username);
       savedAccounts.unshift(cache.account);
