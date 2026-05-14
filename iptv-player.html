@@ -184,7 +184,7 @@
     .topbar-actions { padding: 0 8px; gap: 5px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #pip-btn { display: none !important; }
 
     .main { flex-direction: column; }
     .sidebar { width: 100%; flex: 1; border-right: none; }
@@ -232,6 +232,7 @@
     </div>
     <div style="flex:1"></div>
     <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
+    <button class="btn" id="pip-btn" onclick="togglePiP()" style="display:none" title="Picture in picture [I]">⧉ PiP</button>
     <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
     <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
@@ -907,11 +908,28 @@ function playPrevious() {
   if (previousChannel) playChannel(previousChannel);
 }
 
+function togglePiP() {
+  const video = document.getElementById('player');
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture().catch(() => {});
+  } else {
+    video.requestPictureInPicture().catch(() => {});
+  }
+}
+
+document.getElementById('player').addEventListener('enterpictureinpicture', () => {
+  document.getElementById('pip-btn').classList.add('btn-accent');
+});
+document.getElementById('player').addEventListener('leavepictureinpicture', () => {
+  document.getElementById('pip-btn').classList.remove('btn-accent');
+});
+
 function playChannel(ch) {
   if (currentChannel && currentChannel !== ch) {
     previousChannel = currentChannel;
     document.getElementById('prev-btn').style.display = '';
   }
+  if (document.pictureInPictureEnabled) document.getElementById('pip-btn').style.display = '';
   document.getElementById('crop-btn').style.display = '';
   applyPersistedCrop();
   currentChannel = ch;
@@ -1014,6 +1032,8 @@ document.addEventListener('keydown', (e) => {
     filterChannels();
     input.focus();
     e.preventDefault();
+  } else if (e.key === 'i' || e.key === 'I') {
+    if (currentChannel) togglePiP();
   } else if (e.key === 'h' || e.key === 'H') {
     const sidebar = document.querySelector('.sidebar');
     const topbar = document.querySelector('.topbar');
