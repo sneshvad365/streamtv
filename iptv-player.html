@@ -1153,14 +1153,13 @@ document.getElementById('channel-list').addEventListener('scroll', vsRender, { p
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const tabs = ['all', 'fav', 'recent', 'movies'];
-    const idx = tabs.indexOf(currentTab);
-    const next = tabs[(idx + (e.shiftKey ? -1 + tabs.length : 1)) % tabs.length];
-    const el = document.querySelectorAll('.sidebar-tabs .tab')[tabs.indexOf(next)];
-    switchTab(next, el);
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } return; }
+  if (e.key === '-') {
+    const input = document.getElementById('search-input');
+    input.value = '';
+    input.classList.remove('regex-error');
+    filterChannels();
+    input.focus();
   } else if (e.key === 'h' || e.key === 'H') {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
     else document.exitFullscreen().catch(() => {});
@@ -1172,10 +1171,13 @@ document.addEventListener('keydown', (e) => {
     showVolumeOverlay();
   } else if (e.key === 'i' || e.key === 'I') {
     if (currentChannel) toggleStreamInfo();
-  } else if (e.key === 'ArrowLeft') {
-    adjustVolume(-0.1); e.preventDefault();
-  } else if (e.key === 'ArrowRight') {
-    adjustVolume(0.1); e.preventDefault();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const tabs = ['all', 'fav', 'recent', 'movies'];
+    const idx = tabs.indexOf(currentTab);
+    const next = tabs[(idx + (e.key === 'ArrowRight' ? 1 : -1 + tabs.length)) % tabs.length];
+    const el = document.querySelectorAll('.sidebar-tabs .tab')[tabs.indexOf(next)];
+    switchTab(next, el);
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault();
     if (!filtered.length) return;
