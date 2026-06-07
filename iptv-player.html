@@ -89,6 +89,9 @@
   .fav-btn { position: absolute; bottom: -3px; right: -3px; width: 15px; height: 15px; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; color: var(--text3); cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
   .fav-btn.active { color: var(--amber); opacity: 1; }
   .channel-item:hover .fav-btn { opacity: 1; }
+  .hide-btn { position: absolute; top: -3px; left: -3px; width: 15px; height: 15px; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 50%; color: var(--text3); cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
+  .hide-btn.active { color: var(--red); opacity: 1; }
+  .channel-item:hover .hide-btn { opacity: 1; }
   .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; padding: 24px; text-align: center; }
   .empty-state p { font-size: 13px; color: var(--text3); line-height: 1.5; }
 
@@ -514,6 +517,9 @@ function renderBufferOptions() {
 }
 
 let channels = [], filtered = [], favourites = JSON.parse(localStorage.getItem('stream-favs') || '[]');
+let hiddenChannels = JSON.parse(localStorage.getItem('stream-hidden') || '[]');
+let showHidden = false;
+let _mutedByHidden = false;
 let vodItems = [];
 let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null, selectedIndex = -1, dragSrcIdx = -1;
 let searchIsRegex = false, groupIsRegex = false;
@@ -551,6 +557,7 @@ let savedAccounts = JSON.parse(localStorage.getItem('stream-accounts') || '[]');
 let activeSourceTab = 'xtream';
 
 function saveFavs() { localStorage.setItem('stream-favs', JSON.stringify(favourites)); }
+function saveHidden() { localStorage.setItem('stream-hidden', JSON.stringify(hiddenChannels)); }
 function saveRecent() { localStorage.setItem('stream-recent', JSON.stringify(recentChannels.slice(0,20))); }
 function saveAccounts() { localStorage.setItem('stream-accounts', JSON.stringify(savedAccounts)); }
 
@@ -872,14 +879,16 @@ const VS_BUFFER = 6; // extra rows to render above/below the viewport
 function buildChannelItem(ch, idx) {
   const initials = ch.name.replace(/[^a-zA-Z0-9 ]/g,'').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
   const isFav = favourites.includes(ch.name);
+  const isHidden = hiddenChannels.includes(ch.name);
   const item = document.createElement('div');
   const isDraggable = currentTab === 'fav' || currentTab === 'recent';
   item.className = 'channel-item' + (currentChannel === ch ? ' active' : '') + (idx === selectedIndex ? ' kbd-selected' : '');
   const isRecent = currentTab === 'recent';
   const meta = ch.isVod && ch.rating ? `★ ${parseFloat(ch.rating).toFixed(1)}` : ch.group;
   item.title = ch.isVod && ch.plot ? ch.plot : '';
-  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${meta}</div></div>`;
+  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div><div class="hide-btn ${isHidden ? 'active' : ''}" title="Hide channel">◉</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${meta}</div></div>`;
   item.querySelector('.fav-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleFav(ch, item.querySelector('.fav-btn')); });
+  item.querySelector('.hide-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleHidden(ch, item.querySelector('.hide-btn')); });
   if (isRecent) {
     item.querySelector('.ch-logo-wrap').addEventListener('click', (e) => { e.stopPropagation(); removeFromRecent(ch.name); });
   }
@@ -953,6 +962,7 @@ function renderChannels(resetScroll = false) {
     if (currentCat !== 'All' && currentTab === 'all') list = list.filter(c => c.group === currentCat);
     if (q && currentTab === 'all') list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
   }
+  if (!showHidden) list = list.filter(c => !hiddenChannels.includes(c.name));
   filtered = list;
   if (resetScroll) document.getElementById('channel-list').scrollTop = 0;
   vsRender();
@@ -969,6 +979,13 @@ function toggleFav(ch, btn) {
   else { favourites.push(ch.name); btn.classList.add('active'); }
   saveFavs();
   if (currentTab === 'fav') renderChannels();
+}
+
+function toggleHidden(ch, btn) {
+  if (hiddenChannels.includes(ch.name)) { hiddenChannels = hiddenChannels.filter(n => n !== ch.name); btn.classList.remove('active'); }
+  else { hiddenChannels.push(ch.name); btn.classList.add('active'); }
+  saveHidden();
+  if (!showHidden) renderChannels();
 }
 
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -1108,6 +1125,12 @@ function adjustVolume(delta) {
 }
 
 function playChannel(ch) {
+  const video = document.getElementById('player');
+  // Leaving a hidden channel — restore mute if we muted it
+  if (_mutedByHidden) { video.muted = false; _mutedByHidden = false; }
+  // Switching to a hidden channel — mute if not already muted
+  if (hiddenChannels.includes(ch.name) && !video.muted) { video.muted = true; _mutedByHidden = true; }
+
   if (currentChannel && currentChannel !== ch) {
     previousChannel = currentChannel;
     document.getElementById('prev-btn').style.display = '';
@@ -1115,7 +1138,6 @@ function playChannel(ch) {
   document.getElementById('crop-btn').style.display = '';
   applyPersistedCrop();
   currentChannel = ch;
-  const video = document.getElementById('player');
   document.getElementById('player-overlay').classList.add('hidden');
   document.getElementById('live-indicator').style.display = 'flex';
   const overlay = document.getElementById('np-overlay');
@@ -1254,7 +1276,14 @@ document.getElementById('channel-list').addEventListener('dragover', (e) => e.pr
 document.addEventListener('keydown', (e) => {
   resetTransparentTimer();
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } if (e.key === '#') { e.preventDefault(); e.target.blur(); } return; }
-  if (e.key === 't' || e.key === 'T') {
+  if (e.key === '?') {
+    showHidden = !showHidden;
+    renderChannels();
+    const toast = document.getElementById('stall-toast');
+    toast.textContent = showHidden ? 'Hidden channels visible' : 'Hidden channels invisible';
+    toast.classList.add('show');
+    setTimeout(() => { toast.classList.remove('show'); toast.textContent = 'Reloading stream…'; }, 2000);
+  } else if (e.key === 't' || e.key === 'T') {
     toggleTransparentSidebar();
   } else if (e.key === '#') {
     e.preventDefault();
