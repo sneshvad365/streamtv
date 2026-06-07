@@ -145,6 +145,13 @@
   .transparent-topbar #refresh-btn,
   .transparent-topbar [onclick="showSettings()"],
   .transparent-topbar [onclick="showSetup()"] { display: none !important; }
+  #pip-wrap { position: absolute; bottom: 16px; right: 16px; width: 280px; height: 158px; z-index: 6; border-radius: 10px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,0.7); cursor: move; user-select: none; background: #000; }
+  #pip-player { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #pip-label { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 8px; font-size: 11px; font-weight: 500; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.7)); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pip-close { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.6); border: none; color: #fff; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; line-height: 1; padding: 0; }
+  #pip-wrap:hover #pip-close { opacity: 1; }
+  #pip-resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; cursor: nwse-resize; opacity: 0; transition: opacity 0.15s; background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.5) 40%, rgba(255,255,255,0.5) 55%, transparent 55%, transparent 65%, rgba(255,255,255,0.5) 65%, rgba(255,255,255,0.5) 80%, transparent 80%); }
+  #pip-wrap:hover #pip-resize { opacity: 1; }
   .stall-toast { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 16px; font-size: 13px; color: #fff; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 10; white-space: nowrap; }
   .stall-toast.show { opacity: 1; }
   .vol-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.2); border-radius: 2px; }
@@ -345,6 +352,12 @@
   <div class="player-area">
     <div class="video-wrap">
       <video id="player" controls></video>
+      <div id="pip-wrap" style="display:none">
+        <video id="pip-player" playsinline></video>
+        <div id="pip-label"></div>
+        <button id="pip-close" title="Close PiP">✕</button>
+        <div id="pip-resize" title="Resize"></div>
+      </div>
       <div class="player-overlay" id="player-overlay">
         <div class="play-icon">
           <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1001,6 +1014,7 @@ function switchTab(tab, el) {
 }
 
 let _hls = null;
+let _pipHls = null, pipChannel = null;
 
 function toggleGroups() {
   streamSettings.groupsVisible = !(streamSettings.groupsVisible !== false);
@@ -1229,11 +1243,7 @@ function toggleTransparentSidebar() {
 }
 
 let _stallWatchdog = null;
-function showStallToast() {
-  const toast = document.getElementById('stall-toast');
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 3000);
-}
+function showStallToast() { showToast('Reloading stream…', 3000); }
 function startStallWatchdog(ch) {
   if (_stallWatchdog) clearInterval(_stallWatchdog);
   const video = document.getElementById('player');
@@ -1260,6 +1270,115 @@ function startStallWatchdog(ch) {
   }, INTERVAL);
 }
 
+function showToast(msg, duration = 2500) {
+  const toast = document.getElementById('stall-toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => { toast.classList.remove('show'); toast.textContent = 'Reloading stream…'; }, duration);
+}
+
+function closePip() {
+  if (_pipHls) { _pipHls.destroy(); _pipHls = null; }
+  const video = document.getElementById('pip-player');
+  video.pause(); video.removeAttribute('src');
+  document.getElementById('pip-wrap').style.display = 'none';
+  pipChannel = null;
+}
+
+async function playPip(ch) {
+  pipChannel = ch;
+  const wrap = document.getElementById('pip-wrap');
+  const video = document.getElementById('pip-player');
+  if (_pipHls) { _pipHls.destroy(); _pipHls = null; }
+  video.removeAttribute('src');
+  document.getElementById('pip-label').textContent = ch.name;
+  wrap.style.display = '';
+
+  const streamUrl = useLocalProxy
+    ? `${LOCAL_PROXY}/hls?url=${encodeURIComponent(ch.url)}`
+    : ch.url;
+
+  if (Hls.isSupported()) {
+    _pipHls = new Hls({ enableWorker: true, maxBufferLength: 10, liveSyncDurationCount: 2, liveCatchUpPlaybackRate: 0 });
+    _pipHls.loadSource(streamUrl);
+    _pipHls.attachMedia(video);
+    _pipHls.on(Hls.Events.MANIFEST_PARSED, () => { video.muted = true; video.play().catch(() => {}); });
+    _pipHls.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) console.warn('PiP HLS error', data); });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.muted = true;
+    video.src = streamUrl;
+    video.play().catch(() => {});
+  }
+  showToast(`PiP: ${ch.name}`);
+}
+
+// Close button
+document.getElementById('pip-close').addEventListener('click', closePip);
+
+// Drag + resize + localStorage persistence for PiP
+(function() {
+  const wrap = document.getElementById('pip-wrap');
+  const resizeHandle = document.getElementById('pip-resize');
+  const MIN_W = 160, MIN_H = 90;
+
+  function savePipLayout() {
+    localStorage.setItem('pip-layout', JSON.stringify({
+      left: wrap.style.left, top: wrap.style.top,
+      right: wrap.style.right, bottom: wrap.style.bottom,
+      width: wrap.style.width, height: wrap.style.height
+    }));
+  }
+
+  // Restore saved layout
+  const saved = JSON.parse(localStorage.getItem('pip-layout') || 'null');
+  if (saved) {
+    if (saved.width)  wrap.style.width  = saved.width;
+    if (saved.height) wrap.style.height = saved.height;
+    if (saved.left)   { wrap.style.left = saved.left; wrap.style.right = 'auto'; }
+    else if (saved.right) { wrap.style.right = saved.right; wrap.style.left = 'auto'; }
+    if (saved.top)    { wrap.style.top = saved.top; wrap.style.bottom = 'auto'; }
+    else if (saved.bottom) { wrap.style.bottom = saved.bottom; wrap.style.top = 'auto'; }
+  }
+
+  // Drag
+  let mode = null, ox = 0, oy = 0, ow = 0, oh = 0;
+  wrap.addEventListener('mousedown', (e) => {
+    if (e.target === document.getElementById('pip-close') || e.target === resizeHandle) return;
+    mode = 'drag';
+    ox = e.clientX - wrap.offsetLeft; oy = e.clientY - wrap.offsetTop;
+    e.preventDefault();
+  });
+
+  // Resize
+  resizeHandle.addEventListener('mousedown', (e) => {
+    mode = 'resize';
+    ox = e.clientX; oy = e.clientY;
+    ow = wrap.offsetWidth; oh = wrap.offsetHeight;
+    e.preventDefault(); e.stopPropagation();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!mode) return;
+    const parent = wrap.parentElement;
+    if (mode === 'drag') {
+      const maxX = parent.clientWidth - wrap.offsetWidth;
+      const maxY = parent.clientHeight - wrap.offsetHeight;
+      wrap.style.left = Math.max(0, Math.min(maxX, e.clientX - ox)) + 'px';
+      wrap.style.top  = Math.max(0, Math.min(maxY, e.clientY - oy)) + 'px';
+      wrap.style.right = 'auto'; wrap.style.bottom = 'auto';
+    } else if (mode === 'resize') {
+      const newW = Math.max(MIN_W, Math.min(parent.clientWidth - wrap.offsetLeft, ow + e.clientX - ox));
+      const newH = Math.max(MIN_H, Math.min(parent.clientHeight - wrap.offsetTop, oh + e.clientY - oy));
+      wrap.style.width  = newW + 'px';
+      wrap.style.height = newH + 'px';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (mode) { savePipLayout(); mode = null; }
+  });
+})();
+
 function addToRecent(name) {
   recentChannels = [name, ...recentChannels.filter(n => n !== name)];
   saveRecent();
@@ -1276,13 +1395,30 @@ document.getElementById('channel-list').addEventListener('dragover', (e) => e.pr
 document.addEventListener('keydown', (e) => {
   resetTransparentTimer();
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } if (e.key === '#') { e.preventDefault(); e.target.blur(); } return; }
-  if (e.key === '?') {
+  if (e.key === 'V') {
+    closePip();
+  } else if (e.key === 'v') {
+    const ch = selectedIndex >= 0 && selectedIndex < filtered.length ? filtered[selectedIndex] : null;
+    if (ch) playPip(ch);
+    else showToast('Select a channel first (↑↓), then press V for PiP');
+  } else if (e.key === 'b' || e.key === 'B') {
+    if (pipChannel && currentChannel) {
+      const main = currentChannel, pip = pipChannel;
+      playChannel(pip);
+      playPip(main);
+    } else { showToast('No PiP channel to swap'); }
+  } else if (e.key === 'u' || e.key === 'U') {
+    const main = document.getElementById('player');
+    const pip = document.getElementById('pip-player');
+    if (!pipChannel) { showToast('No PiP active'); return; }
+    const pipHasAudio = !pip.muted;
+    main.muted = pipHasAudio ? false : true;
+    pip.muted = pipHasAudio ? true : false;
+    showToast(pip.muted ? 'Audio: main channel' : 'Audio: PiP channel');
+  } else if (e.key === '?') {
     showHidden = !showHidden;
     renderChannels();
-    const toast = document.getElementById('stall-toast');
-    toast.textContent = showHidden ? 'Hidden channels visible' : 'Hidden channels invisible';
-    toast.classList.add('show');
-    setTimeout(() => { toast.classList.remove('show'); toast.textContent = 'Reloading stream…'; }, 2000);
+    showToast(showHidden ? 'Hidden channels visible' : 'Hidden channels invisible');
   } else if (e.key === 't' || e.key === 'T') {
     toggleTransparentSidebar();
   } else if (e.key === '#') {
