@@ -109,6 +109,12 @@
   .si-val { color: rgba(255,255,255,0.9); }
   .vol-overlay.show { opacity: 1; }
   .channel-item.kbd-selected { background: var(--surface3, rgba(255,255,255,0.08)); outline: 1px solid var(--accent); }
+  .channel-item[draggable=true] { cursor: grab; }
+  .channel-item.dragging { opacity: 0.4; }
+  .channel-item.drag-over { border-top: 2px solid var(--accent); }
+  .drag-handle { font-size: 14px; color: var(--text3); cursor: grab; padding: 0 4px 0 0; flex-shrink: 0; user-select: none; }
+  .drag-handle:hover { color: var(--text2); }
+  .sidebar.transparent-overlay .drag-handle { display: none; }
   .sidebar.transparent-overlay { position: absolute; top: 0; left: 0; height: 100%; z-index: 20; background: transparent !important; backdrop-filter: none; -webkit-backdrop-filter: none; border-right: none !important; }
   .sidebar.transparent-overlay .sidebar-tabs { background: transparent; border-bottom-color: transparent; }
   .sidebar.transparent-overlay .tab { color: rgba(255,255,255,0.7); text-shadow: 0 1px 3px #000, 0 0 6px #000; }
@@ -494,9 +500,9 @@ function renderBufferOptions() {
   });
 }
 
-let channels = [], filtered = [], favourites = new Set(JSON.parse(localStorage.getItem('stream-favs') || '[]'));
+let channels = [], filtered = [], favourites = JSON.parse(localStorage.getItem('stream-favs') || '[]');
 let vodItems = [];
-let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null, selectedIndex = -1;
+let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null, selectedIndex = -1, dragSrcIdx = -1;
 let searchIsRegex = false, groupIsRegex = false;
 
 function toggleSearchRegex(which) {
@@ -531,7 +537,7 @@ let recentChannels = JSON.parse(localStorage.getItem('stream-recent') || '[]');
 let savedAccounts = JSON.parse(localStorage.getItem('stream-accounts') || '[]');
 let activeSourceTab = 'xtream';
 
-function saveFavs() { localStorage.setItem('stream-favs', JSON.stringify([...favourites])); }
+function saveFavs() { localStorage.setItem('stream-favs', JSON.stringify(favourites)); }
 function saveRecent() { localStorage.setItem('stream-recent', JSON.stringify(recentChannels.slice(0,20))); }
 function saveAccounts() { localStorage.setItem('stream-accounts', JSON.stringify(savedAccounts)); }
 
@@ -852,8 +858,9 @@ const VS_BUFFER = 6; // extra rows to render above/below the viewport
 
 function buildChannelItem(ch, idx) {
   const initials = ch.name.replace(/[^a-zA-Z0-9 ]/g,'').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
-  const isFav = favourites.has(ch.name);
+  const isFav = favourites.includes(ch.name);
   const item = document.createElement('div');
+  const isDraggable = currentTab === 'fav' || currentTab === 'recent';
   item.className = 'channel-item' + (currentChannel === ch ? ' active' : '') + (idx === selectedIndex ? ' kbd-selected' : '');
   const isRecent = currentTab === 'recent';
   const meta = ch.isVod && ch.rating ? `★ ${parseFloat(ch.rating).toFixed(1)}` : ch.group;
@@ -862,6 +869,25 @@ function buildChannelItem(ch, idx) {
   item.querySelector('.fav-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleFav(ch, item.querySelector('.fav-btn')); });
   if (isRecent) {
     item.querySelector('.ch-logo-wrap').addEventListener('click', (e) => { e.stopPropagation(); removeFromRecent(ch.name); });
+  }
+  if (isDraggable) {
+    item.draggable = true;
+    item.dataset.idx = idx;
+    item.addEventListener('dragstart', (e) => { dragSrcIdx = idx; e.dataTransfer.effectAllowed = 'move'; item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => { item.classList.remove('dragging'); document.querySelectorAll('.channel-item.drag-over').forEach(el => el.classList.remove('drag-over')); });
+    item.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      item.classList.remove('drag-over');
+      if (dragSrcIdx === idx) return;
+      if (currentTab === 'fav') {
+        const [moved] = favourites.splice(dragSrcIdx, 1); favourites.splice(idx, 0, moved); saveFavs();
+      } else {
+        const [moved] = recentChannels.splice(dragSrcIdx, 1); recentChannels.splice(idx, 0, moved); saveRecent();
+      }
+      renderChannels();
+    });
   }
   item.addEventListener('click', () => playChannel(ch));
   return item;
@@ -876,22 +902,26 @@ function vsRender() {
     return;
   }
 
-  const scrollTop = container.scrollTop;
-  const viewH = container.clientHeight || 400;
-  const start = Math.max(0, Math.floor(scrollTop / ROW_H) - VS_BUFFER);
-  const end   = Math.min(total, Math.ceil((scrollTop + viewH) / ROW_H) + VS_BUFFER);
-
   const frag = document.createDocumentFragment();
-  if (start > 0) {
-    const sp = document.createElement('div');
-    sp.style.height = (start * ROW_H) + 'px';
-    frag.appendChild(sp);
-  }
-  for (let i = start; i < end; i++) frag.appendChild(buildChannelItem(filtered[i], i));
-  if (end < total) {
-    const sp = document.createElement('div');
-    sp.style.height = ((total - end) * ROW_H) + 'px';
-    frag.appendChild(sp);
+  if (currentTab === 'fav' || currentTab === 'recent') {
+    // Render all items — lists are small and drag-and-drop requires stable DOM nodes
+    for (let i = 0; i < total; i++) frag.appendChild(buildChannelItem(filtered[i], i));
+  } else {
+    const scrollTop = container.scrollTop;
+    const viewH = container.clientHeight || 400;
+    const start = Math.max(0, Math.floor(scrollTop / ROW_H) - VS_BUFFER);
+    const end   = Math.min(total, Math.ceil((scrollTop + viewH) / ROW_H) + VS_BUFFER);
+    if (start > 0) {
+      const sp = document.createElement('div');
+      sp.style.height = (start * ROW_H) + 'px';
+      frag.appendChild(sp);
+    }
+    for (let i = start; i < end; i++) frag.appendChild(buildChannelItem(filtered[i], i));
+    if (end < total) {
+      const sp = document.createElement('div');
+      sp.style.height = ((total - end) * ROW_H) + 'px';
+      frag.appendChild(sp);
+    }
   }
   container.replaceChildren(frag);
 }
@@ -905,7 +935,7 @@ function renderChannels(resetScroll = false) {
     if (q) list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
   } else {
     list = channels;
-    if (currentTab === 'fav') list = channels.filter(c => favourites.has(c.name));
+    if (currentTab === 'fav') list = favourites.map(n => channels.find(c => c.name === n)).filter(Boolean);
     if (currentTab === 'recent') list = recentChannels.map(n => channels.find(c => c.name === n) || vodItems.find(c => c.name === n)).filter(Boolean);
     if (currentCat !== 'All' && currentTab === 'all') list = list.filter(c => c.group === currentCat);
     if (q && currentTab === 'all') list = list.filter(c => matchStr(c.name, q, searchIsRegex, 'search-input'));
@@ -922,8 +952,8 @@ function removeFromRecent(name) {
 }
 
 function toggleFav(ch, btn) {
-  if (favourites.has(ch.name)) { favourites.delete(ch.name); btn.classList.remove('active'); }
-  else { favourites.add(ch.name); btn.classList.add('active'); }
+  if (favourites.includes(ch.name)) { favourites = favourites.filter(n => n !== ch.name); btn.classList.remove('active'); }
+  else { favourites.push(ch.name); btn.classList.add('active'); }
   saveFavs();
   if (currentTab === 'fav') renderChannels();
 }
@@ -1171,13 +1201,18 @@ applyGroupsVisibility();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
+document.getElementById('channel-list').addEventListener('dragover', (e) => e.preventDefault());
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } return; }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } if (e.key === '#') { e.preventDefault(); e.target.blur(); } return; }
   if (e.key === 't' || e.key === 'T') {
     toggleTransparentSidebar();
+  } else if (e.key === '#') {
+    e.preventDefault();
+    document.getElementById('search-input').focus();
   } else if (e.key === '-') {
+    e.preventDefault();
     const input = document.getElementById('search-input');
     input.value = '';
     input.classList.remove('regex-error');
