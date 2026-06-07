@@ -58,7 +58,7 @@
   .live-label { font-size: 11px; font-weight: 500; color: var(--text2); font-family: 'DM Mono', monospace; letter-spacing: 0.05em; }
 
   /* MAIN LAYOUT */
-  .main { display: flex; flex: 1; overflow: hidden; }
+  .main { display: flex; flex: 1; overflow: hidden; position: relative; }
 
   /* SIDEBAR */
   .sidebar { width: var(--sidebar-w); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
@@ -109,6 +109,14 @@
   .si-val { color: rgba(255,255,255,0.9); }
   .vol-overlay.show { opacity: 1; }
   .channel-item.kbd-selected { background: var(--surface3, rgba(255,255,255,0.08)); outline: 1px solid var(--accent); }
+  .sidebar.transparent-overlay { position: absolute; top: 0; left: 0; height: 100%; z-index: 20; background: rgba(0,0,0,0.35) !important; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border-right: none !important; }
+  .sidebar.transparent-overlay .sidebar-tabs { background: transparent; border-bottom-color: rgba(255,255,255,0.1); }
+  .sidebar.transparent-overlay .tab { color: rgba(255,255,255,0.5); }
+  .sidebar.transparent-overlay .tab.active { color: #fff; border-bottom-color: var(--accent); }
+  .sidebar.transparent-overlay .channel-item { background: transparent; }
+  .sidebar.transparent-overlay .channel-item:hover { background: rgba(255,255,255,0.08); }
+  .sidebar.transparent-overlay .channel-item.active { background: rgba(255,255,255,0.12); }
+  .sidebar.transparent-overlay .categories { background: transparent; }
   .stall-toast { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 16px; font-size: 13px; color: #fff; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 10; white-space: nowrap; }
   .stall-toast.show { opacity: 1; }
   .vol-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.2); border-radius: 2px; }
@@ -1108,6 +1116,13 @@ function playChannel(ch) {
   }
 }
 
+function toggleTransparentSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const resizer = document.getElementById('sidebar-resizer');
+  const on = sidebar.classList.toggle('transparent-overlay');
+  if (resizer) resizer.style.display = on ? 'none' : '';
+}
+
 let _stallWatchdog = null;
 function showStallToast() {
   const toast = document.getElementById('stall-toast');
@@ -1154,7 +1169,9 @@ document.getElementById('channel-list').addEventListener('scroll', vsRender, { p
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } return; }
-  if (e.key === '-') {
+  if (e.key === 't' || e.key === 'T') {
+    toggleTransparentSidebar();
+  } else if (e.key === '-') {
     const input = document.getElementById('search-input');
     input.value = '';
     input.classList.remove('regex-error');
