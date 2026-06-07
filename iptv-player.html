@@ -108,6 +108,9 @@
   .si-key { color: rgba(255,255,255,0.35); }
   .si-val { color: rgba(255,255,255,0.9); }
   .vol-overlay.show { opacity: 1; }
+  .channel-item.kbd-selected { background: var(--surface3, rgba(255,255,255,0.08)); outline: 1px solid var(--accent); }
+  .stall-toast { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 16px; font-size: 13px; color: #fff; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 10; white-space: nowrap; }
+  .stall-toast.show { opacity: 1; }
   .vol-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.2); border-radius: 2px; }
   .vol-fill { height: 100%; background: #fff; border-radius: 2px; transition: width 0.1s; }
   .vol-label { font-size: 11px; color: #fff; font-family: 'DM Mono', monospace; min-width: 38px; text-align: right; }
@@ -313,6 +316,7 @@
         <div class="overlay-text">Select a channel to start watching</div>
       </div>
       <div class="np-overlay" id="np-overlay"></div>
+      <div class="stall-toast" id="stall-toast">Reloading stream…</div>
       <div class="stream-info" id="stream-info"></div>
       <div class="vol-overlay" id="vol-overlay">
         <span style="font-size:10px;color:rgba(255,255,255,0.5);font-family:'DM Mono',monospace;letter-spacing:0.05em">VOL</span>
@@ -423,6 +427,15 @@
         <label>Buffer size</label>
         <div id="buffer-options" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
       </div>
+      <div class="field" style="margin-top:14px">
+        <label>Stall reload timeout</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <input id="stall-timeout-input" type="number" min="5" max="120" step="5"
+            style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px"
+            onchange="streamSettings.stallTimeout=Math.max(5,Math.min(120,+this.value||30));saveStreamSettings()">
+          <span style="font-size:12px;color:var(--text3)">seconds — reload if stream stalls</span>
+        </div>
+      </div>
       <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px">
         Takes effect when you next select a channel.
       </div>
@@ -445,11 +458,12 @@ const BUFFER_PRESETS = {
   high:   { label: 'High',   detail: '10 s — smooth on congested networks',  bufferTarget: 10, maxBufferLength: 30, liveSyncDurationCount: 4 },
 };
 
-let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true}');
+let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30}');
 function saveStreamSettings() { localStorage.setItem('stream-settings', JSON.stringify(streamSettings)); }
 
 function showSettings() {
   renderBufferOptions();
+  document.getElementById('stall-timeout-input').value = streamSettings.stallTimeout ?? 30;
   document.getElementById('settings-modal-bg').classList.remove('hidden');
 }
 function hideSettings() { document.getElementById('settings-modal-bg').classList.add('hidden'); }
@@ -468,7 +482,7 @@ function renderBufferOptions() {
 
 let channels = [], filtered = [], favourites = new Set(JSON.parse(localStorage.getItem('stream-favs') || '[]'));
 let vodItems = [];
-let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null;
+let currentTab = 'all', currentCat = 'All', currentChannel = null, previousChannel = null, selectedIndex = -1;
 let searchIsRegex = false, groupIsRegex = false;
 
 function toggleSearchRegex(which) {
@@ -822,11 +836,11 @@ function renderSidebar() {
 const ROW_H = 52; // must match .channel-item height in CSS
 const VS_BUFFER = 6; // extra rows to render above/below the viewport
 
-function buildChannelItem(ch) {
+function buildChannelItem(ch, idx) {
   const initials = ch.name.replace(/[^a-zA-Z0-9 ]/g,'').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
   const isFav = favourites.has(ch.name);
   const item = document.createElement('div');
-  item.className = 'channel-item' + (currentChannel === ch ? ' active' : '');
+  item.className = 'channel-item' + (currentChannel === ch ? ' active' : '') + (idx === selectedIndex ? ' kbd-selected' : '');
   const isRecent = currentTab === 'recent';
   const meta = ch.isVod && ch.rating ? `★ ${parseFloat(ch.rating).toFixed(1)}` : ch.group;
   item.title = ch.isVod && ch.plot ? ch.plot : '';
@@ -859,7 +873,7 @@ function vsRender() {
     sp.style.height = (start * ROW_H) + 'px';
     frag.appendChild(sp);
   }
-  for (let i = start; i < end; i++) frag.appendChild(buildChannelItem(filtered[i]));
+  for (let i = start; i < end; i++) frag.appendChild(buildChannelItem(filtered[i], i));
   if (end < total) {
     const sp = document.createElement('div');
     sp.style.height = ((total - end) * ROW_H) + 'px';
@@ -901,11 +915,12 @@ function toggleFav(ch, btn) {
 }
 
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-function filterChannels() { renderChannels(true); }
+function filterChannels() { selectedIndex = -1; renderChannels(true); }
 
 function switchTab(tab, el) {
   currentTab = tab;
   currentCat = 'All';
+  selectedIndex = -1;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   renderSidebar();
@@ -1042,6 +1057,7 @@ function playChannel(ch) {
   video.removeAttribute('src');
   document.getElementById('stream-info').style.display = 'none';
   clearInterval(_infoInterval); _infoInterval = null;
+  startStallWatchdog(ch);
 
   if (ch.isVod) {
     // VOD files (mp4/mkv) — stream directly through the proxy, no HLS detection needed
@@ -1092,6 +1108,38 @@ function playChannel(ch) {
   }
 }
 
+let _stallWatchdog = null;
+function showStallToast() {
+  const toast = document.getElementById('stall-toast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+function startStallWatchdog(ch) {
+  if (_stallWatchdog) clearInterval(_stallWatchdog);
+  const video = document.getElementById('player');
+  let lastTime = null;
+  let stalledFor = 0;
+  const INTERVAL = 2000;
+  _stallWatchdog = setInterval(() => {
+    if (currentChannel !== ch) { clearInterval(_stallWatchdog); _stallWatchdog = null; return; }
+    if (video.paused || video.ended || video.readyState < 2) { lastTime = null; stalledFor = 0; return; }
+    if (lastTime === null) { lastTime = video.currentTime; return; }
+    const stallLimit = (streamSettings.stallTimeout ?? 30) * 1000;
+    if (video.currentTime === lastTime) {
+      stalledFor += INTERVAL;
+      if (stalledFor >= stallLimit) {
+        clearInterval(_stallWatchdog); _stallWatchdog = null;
+        console.warn('Stream stalled — reloading', ch.name);
+        showStallToast();
+        playChannel(ch);
+      }
+    } else {
+      lastTime = video.currentTime;
+      stalledFor = 0;
+    }
+  }, INTERVAL);
+}
+
 function addToRecent(name) {
   recentChannels = [name, ...recentChannels.filter(n => n !== name)];
   saveRecent();
@@ -1106,7 +1154,14 @@ document.getElementById('channel-list').addEventListener('scroll', vsRender, { p
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  if (e.key === 'f' || e.key === 'F') {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const tabs = ['all', 'fav', 'recent', 'movies'];
+    const idx = tabs.indexOf(currentTab);
+    const next = tabs[(idx + (e.shiftKey ? -1 + tabs.length : 1)) % tabs.length];
+    const el = document.querySelectorAll('.sidebar-tabs .tab')[tabs.indexOf(next)];
+    switchTab(next, el);
+  } else if (e.key === 'h' || e.key === 'H') {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
     else document.exitFullscreen().catch(() => {});
   } else if (e.key === 'g' || e.key === 'G') {
@@ -1117,10 +1172,23 @@ document.addEventListener('keydown', (e) => {
     showVolumeOverlay();
   } else if (e.key === 'i' || e.key === 'I') {
     if (currentChannel) toggleStreamInfo();
-  } else if (e.key === 'ArrowUp') {
-    adjustVolume(0.1); e.preventDefault();
-  } else if (e.key === 'ArrowDown') {
+  } else if (e.key === 'ArrowLeft') {
     adjustVolume(-0.1); e.preventDefault();
+  } else if (e.key === 'ArrowRight') {
+    adjustVolume(0.1); e.preventDefault();
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (!filtered.length) return;
+    selectedIndex = e.key === 'ArrowDown'
+      ? Math.min(filtered.length - 1, selectedIndex + 1)
+      : Math.max(0, selectedIndex < 0 ? 0 : selectedIndex - 1);
+    const container = document.getElementById('channel-list');
+    const itemTop = selectedIndex * ROW_H;
+    if (itemTop < container.scrollTop) container.scrollTop = itemTop;
+    else if (itemTop + ROW_H > container.scrollTop + container.clientHeight) container.scrollTop = itemTop + ROW_H - container.clientHeight;
+    vsRender();
+  } else if (e.key === 'Enter') {
+    if (selectedIndex >= 0 && selectedIndex < filtered.length) playChannel(filtered[selectedIndex]);
   } else if (e.key === 'p' || e.key === 'P') {
     playPrevious();
   } else if (e.key === 's' || e.key === 'S') {
@@ -1128,13 +1196,15 @@ document.addEventListener('keydown', (e) => {
     input.focus();
     input.select();
   } else if (e.key === 'c' || e.key === 'C') {
+    toggleCrop();
+  } else if (e.key === 'x' || e.key === 'X') {
     const input = document.getElementById('search-input');
     input.value = '';
     input.classList.remove('regex-error');
     filterChannels();
     input.focus();
     e.preventDefault();
-  } else if (e.key === 'h' || e.key === 'H') {
+  } else if (e.key === 'f' || e.key === 'F') {
     const sidebar = document.querySelector('.sidebar');
     const topbar = document.querySelector('.topbar');
     const sideResizer = document.getElementById('sidebar-resizer');
