@@ -293,33 +293,56 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /tv-off?ip=192.168.x.x — Samsung TV power off via WebSocket API
+  // GET /tv-off?mac=XX:XX:XX:XX:XX:XX — find TV IP via ARP, then power off via Samsung WebSocket API
   if (parsed.pathname === '/tv-off') {
-    const ip = parsed.searchParams.get('ip');
-    if (!ip) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?ip='); return; }
-    try {
-      const appName = Buffer.from('IPTV Player').toString('base64');
-      const ws = new WebSocket(`ws://${ip}:8001/api/v2/channels/samsung.remote.control?name=${appName}`);
-      let done = false;
-      const finish = (ok, error) => {
-        if (done) return; done = true;
-        try { ws.close(); } catch {}
-        res.writeHead(ok ? 200 : 500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(ok ? { ok: true } : { ok: false, error }));
-      };
-      ws.addEventListener('open', () => {
-        ws.send(JSON.stringify({
-          method: 'ms.remote.control',
-          params: { Cmd: 'Click', DataOfCmd: 'KEY_POWER', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
-        }));
-        setTimeout(() => finish(true), 1000);
-      });
-      ws.addEventListener('error', (e) => finish(false, e.message || 'WebSocket error'));
-      setTimeout(() => finish(false, 'Timeout connecting to TV'), 5000);
-    } catch (err) {
-      res.writeHead(500, CORS_HEADERS);
-      res.end(JSON.stringify({ ok: false, error: err.message }));
-    }
+    const mac = parsed.searchParams.get('mac')?.toLowerCase().replace(/-/g, ':')
+      .split(':').map(h => h.padStart(2, '0')).join(':');
+    if (!mac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
+    const { exec } = require('child_process');
+    exec('arp -a', (err, stdout) => {
+      if (err) {
+        res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'arp command failed: ' + err.message }));
+        return;
+      }
+      let ip = null;
+      for (const line of stdout.split('\n')) {
+        const ipMatch = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
+        const macMatch = line.match(/at\s+([0-9a-f:]+)/i);
+        if (ipMatch && macMatch) {
+          const found = macMatch[1].toLowerCase().split(':').map(h => h.padStart(2, '0')).join(':');
+          if (found === mac) { ip = ipMatch[1]; break; }
+        }
+      }
+      if (!ip) {
+        res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'TV not found on network (not in ARP cache)' }));
+        return;
+      }
+      try {
+        const appName = Buffer.from('IPTV Player').toString('base64');
+        const ws = new WebSocket(`ws://${ip}:8001/api/v2/channels/samsung.remote.control?name=${appName}`);
+        let done = false;
+        const finish = (ok, error) => {
+          if (done) return; done = true;
+          try { ws.close(); } catch {}
+          res.writeHead(ok ? 200 : 500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(ok ? { ok: true } : { ok: false, error }));
+        };
+        ws.addEventListener('open', () => {
+          ws.send(JSON.stringify({
+            method: 'ms.remote.control',
+            params: { Cmd: 'Click', DataOfCmd: 'KEY_POWER', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+          }));
+          setTimeout(() => finish(true), 1000);
+        });
+        ws.addEventListener('error', (e) => finish(false, e.message || 'WebSocket error'));
+        setTimeout(() => finish(false, 'Timeout connecting to TV'), 5000);
+      } catch (err) {
+        res.writeHead(500, CORS_HEADERS);
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
     return;
   }
 

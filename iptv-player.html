@@ -512,13 +512,7 @@
             <input id="tv-mac-input" type="text" placeholder="AA:BB:CC:DD:EE:FF"
               style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px;font-family:'DM Mono',monospace"
               onchange="streamSettings.tvMac=this.value.trim();saveStreamSettings();updateTvBtn()">
-            <span style="font-size:12px;color:var(--text3);white-space:nowrap">MAC (Wake on LAN)</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <input id="tv-ip-input" type="text" placeholder="192.168.1.100"
-              style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px;font-family:'DM Mono',monospace"
-              onchange="streamSettings.tvIp=this.value.trim();saveStreamSettings()">
-            <span style="font-size:12px;color:var(--text3);white-space:nowrap">IP (power off)</span>
+            <span style="font-size:12px;color:var(--text3);white-space:nowrap">MAC address</span>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <input id="tv-broadcast-input" type="text" placeholder="255.255.255.255"
@@ -549,7 +543,7 @@ const BUFFER_PRESETS = {
   high:   { label: 'High',   detail: '10 s — smooth on congested networks',  bufferTarget: 10, maxBufferLength: 30, liveSyncDurationCount: 4 },
 };
 
-let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30,"overlayTimeout":15,"tvMac":"","tvIp":"","tvBroadcast":"255.255.255.255"}');
+let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30,"overlayTimeout":15,"tvMac":"","tvBroadcast":"255.255.255.255"}');
 function saveStreamSettings() { localStorage.setItem('stream-settings', JSON.stringify(streamSettings)); }
 
 function showSettings() {
@@ -557,7 +551,6 @@ function showSettings() {
   document.getElementById('stall-timeout-input').value = streamSettings.stallTimeout ?? 30;
   document.getElementById('overlay-timeout-input').value = streamSettings.overlayTimeout ?? 15;
   document.getElementById('tv-mac-input').value = streamSettings.tvMac || '';
-  document.getElementById('tv-ip-input').value = streamSettings.tvIp || '';
   document.getElementById('tv-broadcast-input').value = streamSettings.tvBroadcast || '255.255.255.255';
   document.getElementById('settings-modal-bg').classList.remove('hidden');
 }
@@ -1348,14 +1341,14 @@ function startStallWatchdog(ch) {
 let tvOn = false;
 function updateTvBtn() {
   const btn = document.getElementById('tv-btn');
-  const configured = !!(streamSettings.tvMac && streamSettings.tvIp);
+  const configured = !!streamSettings.tvMac;
   btn.style.display = configured ? '' : 'none';
   btn.classList.toggle('on', tvOn);
   btn.title = tvOn ? 'Turn TV off (=)' : 'Wake TV (=)';
   document.body.classList.toggle('tv-configured', configured);
 }
 async function toggleTvPower() {
-  if (!streamSettings.tvMac || !streamSettings.tvIp) { showToast('Configure TV MAC & IP in ⚙ settings'); return; }
+  if (!streamSettings.tvMac) { showToast('Configure TV MAC in ⚙ settings'); return; }
   if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
   if (!tvOn) {
     showToast('TV: Waking up…');
@@ -1364,7 +1357,7 @@ async function toggleTvPower() {
     tvOn = true;
   } else {
     showToast('TV: Turning off…');
-    fetch(`${LOCAL_PROXY}/tv-off?ip=${encodeURIComponent(streamSettings.tvIp)}`)
+    fetch(`${LOCAL_PROXY}/tv-off?mac=${encodeURIComponent(streamSettings.tvMac)}`)
       .then(r => r.json()).then(d => { if (!d.ok) showToast('TV: ' + (d.error || 'Failed')); })
       .catch(() => showToast('TV: Could not reach TV'));
     tvOn = false;
