@@ -5,6 +5,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const dgram = require('dgram');
 
 const PORT = 3001;
 const TIMEOUT = 60000;
@@ -252,6 +253,73 @@ const server = http.createServer((req, res) => {
     }).catch(err => {
       if (!res.headersSent) { res.writeHead(502, CORS_HEADERS); res.end(err.message); }
     });
+    return;
+  }
+
+  // GET /wol?mac=XX:XX:XX:XX:XX:XX&broadcast=255.255.255.255 — Wake on LAN
+  if (parsed.pathname === '/wol') {
+    const mac = parsed.searchParams.get('mac');
+    const broadcast = parsed.searchParams.get('broadcast') || '255.255.255.255';
+    if (!mac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
+    try {
+      const macBytes = mac.split(/[:\-]/).map(h => parseInt(h, 16));
+      if (macBytes.length !== 6 || macBytes.some(isNaN)) throw new Error('Invalid MAC');
+      const magic = Buffer.alloc(102);
+      magic.fill(0xff, 0, 6);
+      for (let i = 0; i < 16; i++) macBytes.forEach((b, j) => magic[6 + i * 6 + j] = b);
+      const sock = dgram.createSocket('udp4');
+      sock.once('error', (err) => {
+        sock.close();
+        res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      });
+      sock.bind(() => {
+        sock.setBroadcast(true);
+        sock.send(magic, 0, magic.length, 9, broadcast, (err) => {
+          sock.close();
+          if (err) {
+            res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: err.message }));
+          } else {
+            res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          }
+        });
+      });
+    } catch (err) {
+      res.writeHead(400, CORS_HEADERS);
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // GET /tv-off?ip=192.168.x.x — Samsung TV power off via WebSocket API
+  if (parsed.pathname === '/tv-off') {
+    const ip = parsed.searchParams.get('ip');
+    if (!ip) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?ip='); return; }
+    try {
+      const appName = Buffer.from('IPTV Player').toString('base64');
+      const ws = new WebSocket(`ws://${ip}:8001/api/v2/channels/samsung.remote.control?name=${appName}`);
+      let done = false;
+      const finish = (ok, error) => {
+        if (done) return; done = true;
+        try { ws.close(); } catch {}
+        res.writeHead(ok ? 200 : 500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(ok ? { ok: true } : { ok: false, error }));
+      };
+      ws.addEventListener('open', () => {
+        ws.send(JSON.stringify({
+          method: 'ms.remote.control',
+          params: { Cmd: 'Click', DataOfCmd: 'KEY_POWER', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+        }));
+        setTimeout(() => finish(true), 1000);
+      });
+      ws.addEventListener('error', (e) => finish(false, e.message || 'WebSocket error'));
+      setTimeout(() => finish(false, 'Timeout connecting to TV'), 5000);
+    } catch (err) {
+      res.writeHead(500, CORS_HEADERS);
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
     return;
   }
 

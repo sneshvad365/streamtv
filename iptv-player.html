@@ -104,7 +104,11 @@
   .player-overlay.hidden { display: none; }
   .play-icon { width: 60px; height: 60px; background: rgba(108,99,255,0.25); border: 2px solid rgba(108,99,255,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .overlay-text { font-size: 14px; color: rgba(255,255,255,0.5); }
-  .np-overlay { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
+  #tv-btn { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 10px; font-size: 15px; cursor: pointer; z-index: 3; transition: background 0.2s, color 0.2s; color: rgba(255,255,255,0.5); user-select: none; }
+  #tv-btn:hover { background: rgba(0,0,0,0.75); color: #fff; }
+  #tv-btn.on { color: #4cff90; }
+  .np-overlay { position: absolute; top: 12px; left: 50px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
+  body:not(.tv-configured) .np-overlay { left: 12px; }
   .vol-overlay { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 3; min-width: 160px; }
   .stream-info { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 8px 12px; font-size: 11px; font-family: 'DM Mono', monospace; pointer-events: none; display: none; z-index: 2; line-height: 2; max-height: calc(100% - 24px); overflow-y: auto; }
   .si-row { display: flex; justify-content: space-between; gap: 20px; }
@@ -368,6 +372,7 @@
         <div class="overlay-text">Select a channel to start watching</div>
       </div>
       <div class="np-overlay" id="np-overlay"></div>
+      <div id="tv-btn" title="TV power (=)" style="display:none" onclick="toggleTvPower()">⏻</div>
       <div class="stall-toast" id="stall-toast">Reloading stream…</div>
       <div class="stream-info" id="stream-info"></div>
       <div class="vol-overlay" id="vol-overlay">
@@ -500,6 +505,31 @@
       <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px">
         Takes effect when you next select a channel.
       </div>
+      <div class="field" style="margin-top:14px">
+        <label>Samsung TV control</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <input id="tv-mac-input" type="text" placeholder="AA:BB:CC:DD:EE:FF"
+              style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px;font-family:'DM Mono',monospace"
+              onchange="streamSettings.tvMac=this.value.trim();saveStreamSettings();updateTvBtn()">
+            <span style="font-size:12px;color:var(--text3);white-space:nowrap">MAC (Wake on LAN)</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input id="tv-ip-input" type="text" placeholder="192.168.1.100"
+              style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px;font-family:'DM Mono',monospace"
+              onchange="streamSettings.tvIp=this.value.trim();saveStreamSettings()">
+            <span style="font-size:12px;color:var(--text3);white-space:nowrap">IP (power off)</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input id="tv-broadcast-input" type="text" placeholder="255.255.255.255"
+              style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px;font-family:'DM Mono',monospace"
+              onchange="streamSettings.tvBroadcast=this.value.trim()||'255.255.255.255';saveStreamSettings()">
+            <span style="font-size:12px;color:var(--text3);white-space:nowrap">Broadcast address</span>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px;display:none"
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-accent" onclick="hideSettings()">Done</button>
@@ -519,13 +549,16 @@ const BUFFER_PRESETS = {
   high:   { label: 'High',   detail: '10 s — smooth on congested networks',  bufferTarget: 10, maxBufferLength: 30, liveSyncDurationCount: 4 },
 };
 
-let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30,"overlayTimeout":15}');
+let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30,"overlayTimeout":15,"tvMac":"","tvIp":"","tvBroadcast":"255.255.255.255"}');
 function saveStreamSettings() { localStorage.setItem('stream-settings', JSON.stringify(streamSettings)); }
 
 function showSettings() {
   renderBufferOptions();
   document.getElementById('stall-timeout-input').value = streamSettings.stallTimeout ?? 30;
   document.getElementById('overlay-timeout-input').value = streamSettings.overlayTimeout ?? 15;
+  document.getElementById('tv-mac-input').value = streamSettings.tvMac || '';
+  document.getElementById('tv-ip-input').value = streamSettings.tvIp || '';
+  document.getElementById('tv-broadcast-input').value = streamSettings.tvBroadcast || '255.255.255.255';
   document.getElementById('settings-modal-bg').classList.remove('hidden');
 }
 function hideSettings() { document.getElementById('settings-modal-bg').classList.add('hidden'); }
@@ -1312,6 +1345,33 @@ function startStallWatchdog(ch) {
   }, INTERVAL);
 }
 
+let tvOn = false;
+function updateTvBtn() {
+  const btn = document.getElementById('tv-btn');
+  const configured = !!(streamSettings.tvMac && streamSettings.tvIp);
+  btn.style.display = configured ? '' : 'none';
+  btn.classList.toggle('on', tvOn);
+  btn.title = tvOn ? 'Turn TV off (=)' : 'Wake TV (=)';
+  document.body.classList.toggle('tv-configured', configured);
+}
+async function toggleTvPower() {
+  if (!streamSettings.tvMac || !streamSettings.tvIp) { showToast('Configure TV MAC & IP in ⚙ settings'); return; }
+  if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
+  if (!tvOn) {
+    showToast('TV: Waking up…');
+    fetch(`${LOCAL_PROXY}/wol?mac=${encodeURIComponent(streamSettings.tvMac)}&broadcast=${encodeURIComponent(streamSettings.tvBroadcast || '255.255.255.255')}`)
+      .catch(() => showToast('TV: Wake failed'));
+    tvOn = true;
+  } else {
+    showToast('TV: Turning off…');
+    fetch(`${LOCAL_PROXY}/tv-off?ip=${encodeURIComponent(streamSettings.tvIp)}`)
+      .then(r => r.json()).then(d => { if (!d.ok) showToast('TV: ' + (d.error || 'Failed')); })
+      .catch(() => showToast('TV: Could not reach TV'));
+    tvOn = false;
+  }
+  updateTvBtn();
+}
+
 function showToast(msg, duration = 2500) {
   const toast = document.getElementById('stall-toast');
   toast.textContent = msg;
@@ -1428,6 +1488,7 @@ function addToRecent(name) {
 
 applyEPGVisibility();
 applyGroupsVisibility();
+updateTvBtn();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
@@ -1459,7 +1520,9 @@ document.getElementById('channel-list').addEventListener('drop', (e) => {
 document.addEventListener('keydown', (e) => {
   resetTransparentTimer();
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } if (e.key === '#') { e.preventDefault(); e.target.blur(); } return; }
-  if (e.key === 'n' || e.key === 'N') {
+  if (e.key === '=') {
+    toggleTvPower();
+  } else if (e.key === 'n' || e.key === 'N') {
     closePip();
   } else if (e.key === 'v') {
     const ch = selectedIndex >= 0 && selectedIndex < filtered.length ? filtered[selectedIndex] : null;
