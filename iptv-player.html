@@ -106,15 +106,18 @@
   .overlay-text { font-size: 14px; color: rgba(255,255,255,0.5); }
   .np-overlay { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
   .vol-overlay { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 3; min-width: 160px; }
-  .stream-info { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 8px 12px; font-size: 11px; font-family: 'DM Mono', monospace; pointer-events: none; display: none; z-index: 2; line-height: 2; }
+  .stream-info { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 8px 12px; font-size: 11px; font-family: 'DM Mono', monospace; pointer-events: none; display: none; z-index: 2; line-height: 2; max-height: calc(100% - 24px); overflow-y: auto; }
   .si-row { display: flex; justify-content: space-between; gap: 20px; }
   .si-key { color: rgba(255,255,255,0.35); }
   .si-val { color: rgba(255,255,255,0.9); }
   .vol-overlay.show { opacity: 1; }
   .channel-item.kbd-selected { background: var(--surface3, rgba(255,255,255,0.08)); outline: 1px solid var(--accent); }
-  .channel-item[draggable=true] { cursor: grab; }
+  .sidebar.transparent-overlay .channel-item.kbd-selected { outline: none; background: transparent; }
+  .sidebar.transparent-overlay .channel-item.kbd-selected .ch-name { font-size: 13px; font-weight: 700; color: #ffb3b3; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 6px #000; }
+  .channel-item[draggable=true] { cursor: default; }
+  .channel-item[draggable=true] .ch-logo-wrap { cursor: grab; }
   .channel-item.dragging { opacity: 0.4; }
-  .channel-item.drag-over { border-top: 2px solid var(--accent); }
+  .channel-item.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
   .drag-handle { font-size: 14px; color: var(--text3); cursor: grab; padding: 0 4px 0 0; flex-shrink: 0; user-select: none; }
   .drag-handle:hover { color: var(--text2); }
   .sidebar.transparent-overlay .drag-handle { display: none; }
@@ -477,6 +480,15 @@
         <div id="buffer-options" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
       </div>
       <div class="field" style="margin-top:14px">
+        <label>Transparent overlay hide timeout</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <input id="overlay-timeout-input" type="number" min="5" max="300" step="5"
+            style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px"
+            onchange="streamSettings.overlayTimeout=Math.max(5,Math.min(300,+this.value||15));saveStreamSettings()">
+          <span style="font-size:12px;color:var(--text3)">seconds — hide channel list in transparent mode</span>
+        </div>
+      </div>
+      <div class="field" style="margin-top:14px">
         <label>Stall reload timeout</label>
         <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
           <input id="stall-timeout-input" type="number" min="5" max="120" step="5"
@@ -507,12 +519,13 @@ const BUFFER_PRESETS = {
   high:   { label: 'High',   detail: '10 s — smooth on congested networks',  bufferTarget: 10, maxBufferLength: 30, liveSyncDurationCount: 4 },
 };
 
-let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30}');
+let streamSettings = JSON.parse(localStorage.getItem('stream-settings') || '{"bufferPreset":"medium","crop":false,"epgVisible":true,"stallTimeout":30,"overlayTimeout":15}');
 function saveStreamSettings() { localStorage.setItem('stream-settings', JSON.stringify(streamSettings)); }
 
 function showSettings() {
   renderBufferOptions();
   document.getElementById('stall-timeout-input').value = streamSettings.stallTimeout ?? 30;
+  document.getElementById('overlay-timeout-input').value = streamSettings.overlayTimeout ?? 15;
   document.getElementById('settings-modal-bg').classList.remove('hidden');
 }
 function hideSettings() { document.getElementById('settings-modal-bg').classList.add('hidden'); }
@@ -908,21 +921,10 @@ function buildChannelItem(ch, idx) {
   if (isDraggable) {
     item.draggable = true;
     item.dataset.idx = idx;
-    item.addEventListener('dragstart', (e) => { dragSrcIdx = idx; e.dataTransfer.effectAllowed = 'move'; item.classList.add('dragging'); });
+    item.addEventListener('dragstart', (e) => { if (!e.target.closest('.ch-logo-wrap')) { e.preventDefault(); return; } dragSrcIdx = idx; e.dataTransfer.effectAllowed = 'move'; item.classList.add('dragging'); });
     item.addEventListener('dragend', () => { item.classList.remove('dragging'); document.querySelectorAll('.channel-item.drag-over').forEach(el => el.classList.remove('drag-over')); });
-    item.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; item.classList.add('drag-over'); });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-    item.addEventListener('drop', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      item.classList.remove('drag-over');
-      if (dragSrcIdx === idx) return;
-      if (currentTab === 'fav') {
-        const [moved] = favourites.splice(dragSrcIdx, 1); favourites.splice(idx, 0, moved); saveFavs();
-      } else {
-        const [moved] = recentChannels.splice(dragSrcIdx, 1); recentChannels.splice(idx, 0, moved); saveRecent();
-      }
-      renderChannels();
-    });
+    item.addEventListener('dragenter', (e) => { e.preventDefault(); document.querySelectorAll('.channel-item.drag-over').forEach(el => el.classList.remove('drag-over')); item.classList.add('drag-over'); });
+    item.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
   }
   item.addEventListener('click', () => playChannel(ch));
   return item;
@@ -1114,8 +1116,36 @@ function updateStreamInfo() {
     });
   }
 
+  const shortcuts = [
+    ['—', ''],
+    ['↑ ↓', 'Select channel'],
+    ['Enter', 'Play selected'],
+    ['← →', 'Switch tab'],
+    ['h', 'Fullscreen'],
+    ['f', 'Toggle sidebar'],
+    ['t', 'Transparent mode'],
+    ['g', 'Toggle guide'],
+    ['m', 'Mute'],
+    ['i', 'Stream info'],
+    ['c', 'Crop'],
+    ['x', 'Clear search'],
+    ['s', 'Focus search'],
+    ['#', 'Focus/unfocus search'],
+    ['-', 'Clear & focus search'],
+    ['p', 'Previous channel'],
+    ['v', 'PiP channel'],
+    ['n', 'Close PiP'],
+    ['b', 'Swap main ↔ PiP'],
+    ['u', 'Toggle PiP audio'],
+    ['?', 'Toggle hidden channels'],
+  ];
+
   el.innerHTML = rows.map(([k, v]) =>
     `<div class="si-row"><span class="si-key">${k}</span><span class="si-val">${v}</span></div>`
+  ).join('') + shortcuts.map(([k, v]) =>
+    k === '—'
+      ? `<div class="si-row" style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px"><span class="si-key" style="color:rgba(255,255,255,0.2)">shortcuts</span><span class="si-val"></span></div>`
+      : `<div class="si-row"><span class="si-key">${k}</span><span class="si-val" style="color:rgba(255,255,255,0.55)">${v}</span></div>`
   ).join('');
 }
 
@@ -1230,7 +1260,7 @@ function resetTransparentTimer() {
   _transparentHideTimer = setTimeout(() => {
     sidebar.style.opacity = '0';
     document.querySelector('.topbar').style.opacity = '0';
-  }, 15000);
+  }, (streamSettings.overlayTimeout ?? 15) * 1000);
 }
 function toggleTransparentSidebar() {
   const sidebar = document.querySelector('.sidebar');
@@ -1239,7 +1269,19 @@ function toggleTransparentSidebar() {
   const on = sidebar.classList.toggle('transparent-overlay');
   topbar.classList.toggle('transparent-topbar', on);
   if (resizer) resizer.style.display = on ? 'none' : '';
-  if (on) { resetTransparentTimer(); } else { clearTimeout(_transparentHideTimer); sidebar.style.opacity = ''; topbar.style.opacity = ''; }
+  if (on) { resetTransparentTimer(); } else {
+    clearTimeout(_transparentHideTimer); sidebar.style.opacity = ''; topbar.style.opacity = '';
+    // Clamp PiP position after layout shift
+    requestAnimationFrame(() => {
+      const wrap = document.getElementById('pip-wrap');
+      if (wrap.style.display === 'none') return;
+      const parent = wrap.parentElement;
+      const maxX = parent.clientWidth - wrap.offsetWidth;
+      const maxY = parent.clientHeight - wrap.offsetHeight;
+      if (wrap.style.left) wrap.style.left = Math.max(0, Math.min(maxX, parseInt(wrap.style.left))) + 'px';
+      if (wrap.style.top)  wrap.style.top  = Math.max(0, Math.min(maxY, parseInt(wrap.style.top)))  + 'px';
+    });
+  }
 }
 
 let _stallWatchdog = null;
@@ -1389,13 +1431,35 @@ applyGroupsVisibility();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
+document.addEventListener('mousemove', debounce(resetTransparentTimer, 100), { passive: true });
 document.getElementById('channel-list').addEventListener('dragover', (e) => e.preventDefault());
+document.getElementById('channel-list').addEventListener('drop', (e) => {
+  e.preventDefault();
+  document.querySelectorAll('.channel-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  const target = e.target.closest('.channel-item[draggable]');
+  const targetIdx = target ? +target.dataset.idx : -1;
+  if (dragSrcIdx < 0 || targetIdx < 0 || dragSrcIdx === targetIdx) return;
+  const srcName = filtered[dragSrcIdx]?.name;
+  const tgtName = filtered[targetIdx]?.name;
+  if (!srcName || !tgtName || srcName === tgtName) return;
+  if (currentTab === 'fav') {
+    const a = favourites.indexOf(srcName), b = favourites.indexOf(tgtName);
+    if (a < 0 || b < 0) return;
+    const [moved] = favourites.splice(a, 1); favourites.splice(b, 0, moved); saveFavs();
+  } else {
+    const a = recentChannels.indexOf(srcName), b = recentChannels.indexOf(tgtName);
+    if (a < 0 || b < 0) return;
+    const [moved] = recentChannels.splice(a, 1); recentChannels.splice(b, 0, moved); saveRecent();
+  }
+  dragSrcIdx = -1;
+  renderChannels();
+});
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   resetTransparentTimer();
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } if (e.key === '#') { e.preventDefault(); e.target.blur(); } return; }
-  if (e.key === 'V') {
+  if (e.key === 'n' || e.key === 'N') {
     closePip();
   } else if (e.key === 'v') {
     const ch = selectedIndex >= 0 && selectedIndex < filtered.length ? filtered[selectedIndex] : null;
