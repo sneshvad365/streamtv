@@ -51,6 +51,8 @@
   .regex-toggle.active { color: var(--accent2); background: rgba(108,99,255,0.18); }
   .btn { padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); font-family: inherit; }
   .btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
+  .tv-on-btn { color: var(--green); border-color: #3ddc8440; }
+  .tv-on-btn:hover { background: #3ddc8420; color: var(--green); border-color: #3ddc8480; }
   .btn-accent { background: var(--accent); border-color: var(--accent); color: white; }
   .btn-accent:hover { background: #7d75ff; border-color: #7d75ff; color: white; }
   .live-dot { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 2s infinite; }
@@ -104,9 +106,6 @@
   .player-overlay.hidden { display: none; }
   .play-icon { width: 60px; height: 60px; background: rgba(108,99,255,0.25); border: 2px solid rgba(108,99,255,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .overlay-text { font-size: 14px; color: rgba(255,255,255,0.5); }
-  #tv-btn { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 10px; font-size: 15px; cursor: pointer; z-index: 3; transition: background 0.2s, color 0.2s; color: rgba(255,255,255,0.5); user-select: none; }
-  #tv-btn:hover { background: rgba(0,0,0,0.75); color: #fff; }
-  #tv-btn.on { color: #4cff90; }
   .np-overlay { position: absolute; top: 12px; left: 50px; background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 7px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: #fff; pointer-events: none; display: none; z-index: 2; }
   body:not(.tv-configured) .np-overlay { left: 12px; }
   .vol-overlay { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 3; min-width: 160px; }
@@ -302,6 +301,10 @@
     <div class="logo-text">stream<span>.</span></div>
   </div>
   <div class="topbar-actions">
+    <div id="tv-controls" style="display:none;align-items:center;gap:6px;margin-right:4px">
+      <button class="btn tv-on-btn" id="tv-on-btn" onclick="tvWakeOn()" title="Turn TV on (=)">ON</button>
+      <button class="btn" id="tv-off-btn" onclick="tvWakeOff()" title="Turn TV off">OFF</button>
+    </div>
     <div class="search-box">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -372,7 +375,6 @@
         <div class="overlay-text">Select a channel to start watching</div>
       </div>
       <div class="np-overlay" id="np-overlay"></div>
-      <div id="tv-btn" title="TV power (=)" style="display:none" onclick="toggleTvPower()">⏻</div>
       <div class="stall-toast" id="stall-toast">Reloading stream…</div>
       <div class="stream-info" id="stream-info"></div>
       <div class="vol-overlay" id="vol-overlay">
@@ -1332,18 +1334,20 @@ function startStallWatchdog(ch) {
 }
 
 function updateTvBtn() {
-  const btn = document.getElementById('tv-btn');
+  const controls = document.getElementById('tv-controls');
   const configured = !!streamSettings.tvMac;
-  btn.style.display = configured ? '' : 'none';
-  btn.title = 'Wake TV (=)';
+  controls.style.display = configured ? 'flex' : 'none';
   document.body.classList.toggle('tv-configured', configured);
 }
-function toggleTvPower() {
+function tvWakeOn() {
   if (!streamSettings.tvMac) { showToast('Configure TV MAC in ⚙ settings'); return; }
   if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
   showToast('TV: Waking up…');
   fetch(`${LOCAL_PROXY}/wake-tv?mac=${encodeURIComponent(streamSettings.tvMac)}`)
     .catch(() => showToast('TV: Wake failed'));
+}
+function tvWakeOff() {
+  // Not implemented yet
 }
 
 function showToast(msg, duration = 2500) {
@@ -1495,7 +1499,7 @@ document.addEventListener('keydown', (e) => {
   resetTransparentTimer();
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') { if (e.key === '-') { e.preventDefault(); e.target.value = ''; e.target.classList.remove('regex-error'); filterChannels(); e.target.blur(); } if (e.key === '#') { e.preventDefault(); e.target.blur(); } return; }
   if (e.key === '=') {
-    toggleTvPower();
+    tvWakeOn();
   } else if (e.key === 'n' || e.key === 'N') {
     closePip();
   } else if (e.key === 'v') {
