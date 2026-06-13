@@ -53,6 +53,7 @@
   .btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
   .tv-on-btn { color: var(--green); border-color: #3ddc8440; }
   .tv-on-btn:hover { background: #3ddc8420; color: var(--green); border-color: #3ddc8480; }
+  #airplay-btn.casting { color: var(--accent2); border-color: var(--accent); background: rgba(108,99,255,0.18); }
   .btn-accent { background: var(--accent); border-color: var(--accent); color: white; }
   .btn-accent:hover { background: #7d75ff; border-color: #7d75ff; color: white; }
   .live-dot { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 2s infinite; }
@@ -305,6 +306,10 @@
       <button class="btn tv-on-btn" id="tv-on-btn" onclick="tvWakeOn()" title="Turn TV on (=)">ON</button>
       <button class="btn" id="tv-off-btn" onclick="tvWakeOff()" title="Turn TV off">OFF</button>
     </div>
+    <button class="btn" id="airplay-btn" onclick="startAirplay()" title="AirPlay to TV" style="display:none;align-items:center;gap:6px;margin-right:4px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/><path d="m12 15 5 6H7l5-6z" fill="currentColor"/></svg>
+      AirPlay
+    </button>
     <div class="search-box">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -361,7 +366,7 @@
   <!-- PLAYER -->
   <div class="player-area">
     <div class="video-wrap">
-      <video id="player" controls></video>
+      <video id="player" controls playsinline x-webkit-airplay="allow"></video>
       <div id="pip-wrap" style="display:none">
         <video id="pip-player" playsinline></video>
         <div id="pip-label"></div>
@@ -1233,7 +1238,12 @@ function playChannel(ch) {
 
   const preset = BUFFER_PRESETS[streamSettings.bufferPreset] || BUFFER_PRESETS.medium;
 
-  if (Hls.isSupported()) {
+  // On Safari, prefer native HLS playback so the stream can be AirPlayed to the TV.
+  // hls.js (Media Source Extensions) cannot be AirPlayed; native HLS can.
+  if (IS_AIRPLAY_BROWSER && video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = streamUrl;
+    video.play().catch(() => {});
+  } else if (Hls.isSupported()) {
     _hls = new Hls({
       enableWorker: true,
       maxBufferLength: preset.maxBufferLength,
@@ -1348,6 +1358,37 @@ function tvWakeOn() {
 }
 function tvWakeOff() {
   // Not implemented yet
+}
+
+// ---- AirPlay (Safari only) ----
+// Detect a browser that supports the WebKit AirPlay target-picker API.
+const IS_AIRPLAY_BROWSER = typeof window.WebKitPlaybackTargetAvailabilityEvent !== 'undefined'
+  || (document.createElement('video').webkitShowPlaybackTargetPicker !== undefined);
+
+function startAirplay() {
+  const video = document.getElementById('player');
+  if (video.webkitShowPlaybackTargetPicker) {
+    video.webkitShowPlaybackTargetPicker();
+  } else {
+    showToast('AirPlay needs Safari');
+  }
+}
+
+function setupAirplay() {
+  const video = document.getElementById('player');
+  const btn = document.getElementById('airplay-btn');
+  if (!btn || !video.webkitShowPlaybackTargetPicker) return; // not Safari — leave hidden
+
+  // Show the button only when at least one AirPlay target is available on the network.
+  video.addEventListener('webkitplaybacktargetavailabilitychanged', (e) => {
+    btn.style.display = (e.availability === 'available') ? 'inline-flex' : 'none';
+  });
+  // Reflect active casting state on the button.
+  video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
+    const casting = !!video.webkitCurrentPlaybackTargetIsWireless;
+    btn.classList.toggle('casting', casting);
+    btn.title = casting ? 'AirPlay: connected (click to change)' : 'AirPlay to TV';
+  });
 }
 
 function showToast(msg, duration = 2500) {
@@ -1467,6 +1508,7 @@ function addToRecent(name) {
 applyEPGVisibility();
 applyGroupsVisibility();
 updateTvBtn();
+setupAirplay();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
