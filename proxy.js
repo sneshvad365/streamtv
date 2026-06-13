@@ -5,6 +5,8 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const dgram = require('dgram');
+const os = require('os');
 
 const PORT = 3001;
 const TIMEOUT = 60000;
@@ -256,9 +258,10 @@ const server = http.createServer((req, res) => {
   }
 
   // GET /wake-tv?mac=XX:XX:XX:XX:XX:XX — wake TV by pinging its IP
-  // Fast path: find IP in ARP cache by MAC and ping it directly.
-  // Slow path: ping-sweep the whole subnet so the TV wakes on the incoming packet,
-  //            then re-check ARP for the resolved IP.
+  // GET /wake-tv?mac=XX:XX:XX:XX:XX:XX — wake Samsung TV via two simultaneous methods:
+  // 1. WoL magic packet to subnet broadcast (192.168.x.255) — works if TV has WoWLAN enabled
+  // 2. UDP sweep of whole subnet — triggers ARP requests for uncached IPs; Samsung TVs
+  //    wake on receiving an ARP request for their own address
   if (parsed.pathname === '/wake-tv') {
     const rawMac = parsed.searchParams.get('mac');
     if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
@@ -279,33 +282,41 @@ const server = http.createServer((req, res) => {
         cb(null);
       });
     }
-    function pingIp(ip, cb) {
-      // -c 1 packet, -W 500ms timeout (macOS ping uses ms for -W)
-      exec(`ping -c 1 -W 500 ${ip}`, cb);
-    }
     function respond(ip) {
+      if (res.headersSent) return;
       res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, ip: ip || null }));
     }
 
-    findInArp((knownIp) => {
-      if (knownIp) {
-        // Fast path: TV IP already known — ping it directly to wake
-        pingIp(knownIp, () => respond(knownIp));
-      } else {
-        // Slow path: ping-sweep the subnet so the TV wakes on the incoming packet
-        exec("ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null", (_, ifaceIp) => {
-          const subnet = (ifaceIp || '192.168.178.0').trim().split('.').slice(0, 3).join('.');
-          const pings = [];
-          for (let i = 1; i <= 254; i++) {
-            pings.push(new Promise(r => exec(`ping -c 1 -W 500 ${subnet}.${i}`, r)));
-          }
-          Promise.all(pings).then(() => {
-            // Re-check ARP — TV should now have responded and appeared
-            findInArp((foundIp) => respond(foundIp));
-          });
-        });
-      }
+    const localIp = Object.values(os.networkInterfaces()).flat()
+      .find(i => !i.internal && i.family === 'IPv4')?.address || '192.168.178.43';
+    const subnet = localIp.split('.').slice(0, 3).join('.');
+
+    // Method 1: WoL magic packet to subnet broadcast
+    // 102 bytes: 6×0xFF + 16 repetitions of the 6-byte MAC
+    const macBytes = mac.split(':').map(h => parseInt(h, 16));
+    const magic = Buffer.alloc(102);
+    magic.fill(0xff, 0, 6);
+    for (let i = 0; i < 16; i++) macBytes.forEach((b, j) => { magic[6 + i * 6 + j] = b; });
+    const wolSock = dgram.createSocket('udp4');
+    wolSock.bind(() => {
+      wolSock.setBroadcast(true);
+      wolSock.send(magic, 0, 102, 9, `${subnet}.255`, () => { try { wolSock.close(); } catch {} });
+    });
+
+    // Method 2: UDP sweep — triggers ARP requests for IPs not in cache.
+    // Samsung TVs wake on an ARP request for their own IP.
+    const sweepSock = dgram.createSocket('udp4');
+    const buf = Buffer.alloc(1);
+    let pending = 254;
+    const onSent = () => {
+      if (--pending > 0) return;
+      try { sweepSock.close(); } catch {}
+      // Wait for TV to respond to ARP, then confirm its IP
+      setTimeout(() => findInArp((foundIp) => respond(foundIp)), 1500);
+    };
+    sweepSock.bind(() => {
+      for (let i = 1; i <= 254; i++) sweepSock.send(buf, 0, 1, 9, `${subnet}.${i}`, onSent);
     });
     return;
   }
