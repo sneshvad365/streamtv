@@ -11,30 +11,6 @@ const os = require('os');
 const PORT = 3001;
 const TIMEOUT = 60000;
 const CACHE_FILE = path.join(__dirname, 'channel-cache.json');
-const TOKEN_FILE = path.join(__dirname, 'samsung-token.json');
-
-// Samsung TV pairing token — stored on disk so it survives proxy restarts
-function loadSamsungToken() {
-  try { return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')).token || null; } catch { return null; }
-}
-function saveSamsungToken(token) {
-  try { fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: new Date().toISOString() })); } catch (e) { console.error('Token save failed:', e.message); }
-}
-
-// Find a device IP from the ARP cache by MAC address
-function findInArpByMac(mac, cb) {
-  const { exec } = require('child_process');
-  const norm = m => m.toLowerCase().split(':').map(h => h.padStart(2, '0')).join(':');
-  exec('arp -a', (err, stdout) => {
-    if (err) { cb(null); return; }
-    for (const line of (stdout || '').split('\n')) {
-      const ipM  = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
-      const macM = line.match(/at\s+([0-9a-f:]+)/i);
-      if (ipM && macM && norm(macM[1]) === norm(mac)) { cb(ipM[1]); return; }
-    }
-    cb(null);
-  });
-}
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -290,7 +266,22 @@ const server = http.createServer((req, res) => {
     const rawMac = parsed.searchParams.get('mac');
     if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
     const mac = rawMac.toLowerCase().replace(/-/g, ':').split(':').map(h => h.padStart(2, '0')).join(':');
+    const { exec } = require('child_process');
 
+    function normaliseMac(str) {
+      return str.toLowerCase().split(':').map(h => h.padStart(2, '0')).join(':');
+    }
+    function findInArp(cb) {
+      exec('arp -a', (err, stdout) => {
+        if (err) { cb(null); return; }
+        for (const line of (stdout || '').split('\n')) {
+          const ipM  = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
+          const macM = line.match(/at\s+([0-9a-f:]+)/i);
+          if (ipM && macM && normaliseMac(macM[1]) === mac) { cb(ipM[1]); return; }
+        }
+        cb(null);
+      });
+    }
     function respond(ip) {
       if (res.headersSent) return;
       res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
@@ -322,126 +313,10 @@ const server = http.createServer((req, res) => {
       if (--pending > 0) return;
       try { sweepSock.close(); } catch {}
       // Wait for TV to respond to ARP, then confirm its IP
-      setTimeout(() => findInArpByMac(mac, (foundIp) => respond(foundIp)), 1500);
+      setTimeout(() => findInArp((foundIp) => respond(foundIp)), 1500);
     };
     sweepSock.bind(() => {
       for (let i = 1; i <= 254; i++) sweepSock.send(buf, 0, 1, 9, `${subnet}.${i}`, onSent);
-    });
-    return;
-  }
-
-  // GET /tv-off?mac=XX:XX:XX:XX:XX:XX — power off Samsung TV via WebSocket API (token-based auth)
-  if (parsed.pathname === '/tv-off') {
-    const rawMac = parsed.searchParams.get('mac');
-    if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
-    const mac = rawMac.toLowerCase().replace(/-/g, ':').split(':').map(h => h.padStart(2, '0')).join(':');
-
-    findInArpByMac(mac, (ip) => {
-      if (!ip) {
-        res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'TV not found in ARP cache — is it powered on?' }));
-        return;
-      }
-      try {
-        const appName = Buffer.from('IPTVPlayer').toString('base64');
-        const token   = loadSamsungToken();
-        const wsUrl   = `ws://${ip}:8001/api/v2/channels/samsung.remote.control?name=${appName}${token ? `&token=${token}` : ''}`;
-        console.log(`[tv-off] Connecting${token ? ' (with stored token)' : ' (no token — pairing required)'}:`, wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-        let done = false;
-        const finish = (ok, error) => {
-          if (done) return; done = true;
-          try { ws.close(); } catch {}
-          res.writeHead(ok ? 200 : 500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(ok ? { ok: true } : { ok: false, error }));
-        };
-        const sendPowerOff = () => {
-          console.log('[tv-off] Sending KEY_POWEROFF');
-          ws.send(JSON.stringify({
-            method: 'ms.remote.control',
-            params: { Cmd: 'Click', DataOfCmd: 'KEY_POWEROFF', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
-          }));
-          setTimeout(() => finish(true), 800);
-        };
-        ws.addEventListener('message', (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            console.log('[tv-off] msg:', JSON.stringify(msg));
-            if (msg.event === 'ms.channel.connect') {
-              // Save / refresh the token
-              const t = msg.data?.token;
-              if (t) { saveSamsungToken(t); console.log('[tv-off] Token saved:', t); }
-              sendPowerOff();
-            } else if (msg.event === 'ms.channel.unauthorized') {
-              // Invalid / expired token — clear it so next call triggers fresh pairing
-              try { fs.unlinkSync(TOKEN_FILE); } catch {}
-              finish(false, 'pair_required');
-            }
-          } catch {}
-        });
-        ws.addEventListener('error', (e) => finish(false, e.message || 'WebSocket error'));
-        setTimeout(() => {
-          if (!done) finish(false, token
-            ? 'Timeout — token may be expired; call /tv-pair to re-pair'
-            : 'pair_required');
-        }, 10000);
-      } catch (err) {
-        res.writeHead(500, CORS_HEADERS);
-        res.end(JSON.stringify({ ok: false, error: err.message }));
-      }
-    });
-    return;
-  }
-
-  // GET /tv-pair?mac=XX:XX:XX:XX:XX:XX — one-time Samsung TV pairing; TV must be on.
-  // Connects without a token so the TV shows its "Allow connection?" dialog.
-  // When user accepts on TV, saves the returned token for future /tv-off calls.
-  if (parsed.pathname === '/tv-pair') {
-    const rawMac = parsed.searchParams.get('mac');
-    if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
-    const mac = rawMac.toLowerCase().replace(/-/g, ':').split(':').map(h => h.padStart(2, '0')).join(':');
-
-    findInArpByMac(mac, (ip) => {
-      if (!ip) {
-        res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'TV not found in ARP cache — is it powered on?' }));
-        return;
-      }
-      // Clear any stale token so we force a fresh pairing dialog
-      try { fs.unlinkSync(TOKEN_FILE); } catch {}
-
-      const appName = Buffer.from('IPTVPlayer').toString('base64');
-      const wsUrl   = `ws://${ip}:8001/api/v2/channels/samsung.remote.control?name=${appName}`;
-      console.log('[tv-pair] Connecting for pairing:', wsUrl);
-
-      const ws = new WebSocket(wsUrl);
-      let done = false;
-      const finish = (ok, data) => {
-        if (done) return; done = true;
-        try { ws.close(); } catch {}
-        res.writeHead(ok ? 200 : 500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(ok ? { ok: true, ...data } : { ok: false, error: data }));
-      };
-      ws.addEventListener('message', (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          console.log('[tv-pair] msg:', JSON.stringify(msg));
-          if (msg.event === 'ms.channel.connect') {
-            const t = msg.data?.token;
-            if (t) saveSamsungToken(t);
-            console.log('[tv-pair] Paired! Token:', t || '(none)');
-            finish(true, { token: t || null });
-          } else if (msg.event === 'ms.channel.unauthorized') {
-            finish(false, 'TV rejected pairing — check TV settings (General → External Device Manager → Device Connection Manager)');
-          }
-        } catch {}
-      });
-      ws.addEventListener('error', (e) => finish(false, e.message || 'WebSocket error'));
-      // Long timeout — user needs time to see and accept the dialog on the TV
-      setTimeout(() => {
-        if (!done) finish(false, 'Timeout — no response from TV. Ensure TV is on and accept the pairing dialog if one appeared.');
-      }, 30000);
     });
     return;
   }
