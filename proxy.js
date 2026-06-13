@@ -292,16 +292,24 @@ const server = http.createServer((req, res) => {
       .find(i => !i.internal && i.family === 'IPv4')?.address || '192.168.178.43';
     const subnet = localIp.split('.').slice(0, 3).join('.');
 
-    // Method 1: WoL magic packet to subnet broadcast
+    // Method 1: WoL magic packet — sent to subnet + global broadcast on the
+    // two standard WoL ports (9 and 7) for maximum compatibility.
     // 102 bytes: 6×0xFF + 16 repetitions of the 6-byte MAC
     const macBytes = mac.split(':').map(h => parseInt(h, 16));
     const magic = Buffer.alloc(102);
     magic.fill(0xff, 0, 6);
     for (let i = 0; i < 16; i++) macBytes.forEach((b, j) => { magic[6 + i * 6 + j] = b; });
     const wolSock = dgram.createSocket('udp4');
+    const wolTargets = [
+      [`${subnet}.255`, 9], [`${subnet}.255`, 7],
+      ['255.255.255.255', 9], ['255.255.255.255', 7],
+    ];
     wolSock.bind(() => {
       wolSock.setBroadcast(true);
-      wolSock.send(magic, 0, 102, 9, `${subnet}.255`, () => { try { wolSock.close(); } catch {} });
+      let left = wolTargets.length;
+      wolTargets.forEach(([ip, port]) => {
+        wolSock.send(magic, 0, 102, port, ip, () => { if (--left === 0) { try { wolSock.close(); } catch {} } });
+      });
     });
 
     // Method 2: UDP sweep — triggers ARP requests for IPs not in cache.
