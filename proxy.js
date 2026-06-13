@@ -5,7 +5,6 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const dgram = require('dgram');
 
 const PORT = 3001;
 const TIMEOUT = 60000;
@@ -256,40 +255,58 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /wol?mac=XX:XX:XX:XX:XX:XX&broadcast=255.255.255.255 — Wake on LAN
-  if (parsed.pathname === '/wol') {
-    const mac = parsed.searchParams.get('mac');
-    const broadcast = parsed.searchParams.get('broadcast') || '255.255.255.255';
-    if (!mac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
-    try {
-      const macBytes = mac.split(/[:\-]/).map(h => parseInt(h, 16));
-      if (macBytes.length !== 6 || macBytes.some(isNaN)) throw new Error('Invalid MAC');
-      const magic = Buffer.alloc(102);
-      magic.fill(0xff, 0, 6);
-      for (let i = 0; i < 16; i++) macBytes.forEach((b, j) => magic[6 + i * 6 + j] = b);
-      const sock = dgram.createSocket('udp4');
-      sock.once('error', (err) => {
-        sock.close();
-        res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: err.message }));
-      });
-      sock.bind(() => {
-        sock.setBroadcast(true);
-        sock.send(magic, 0, magic.length, 9, broadcast, (err) => {
-          sock.close();
-          if (err) {
-            res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, error: err.message }));
-          } else {
-            res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
-          }
-        });
-      });
-    } catch (err) {
-      res.writeHead(400, CORS_HEADERS);
-      res.end(JSON.stringify({ ok: false, error: err.message }));
+  // GET /wake-tv?mac=XX:XX:XX:XX:XX:XX — wake TV by pinging its IP
+  // Fast path: find IP in ARP cache by MAC and ping it directly.
+  // Slow path: ping-sweep the whole subnet so the TV wakes on the incoming packet,
+  //            then re-check ARP for the resolved IP.
+  if (parsed.pathname === '/wake-tv') {
+    const rawMac = parsed.searchParams.get('mac');
+    if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
+    const mac = rawMac.toLowerCase().replace(/-/g, ':').split(':').map(h => h.padStart(2, '0')).join(':');
+    const { exec } = require('child_process');
+
+    function normaliseMac(str) {
+      return str.toLowerCase().split(':').map(h => h.padStart(2, '0')).join(':');
     }
+    function findInArp(cb) {
+      exec('arp -a', (err, stdout) => {
+        if (err) { cb(null); return; }
+        for (const line of (stdout || '').split('\n')) {
+          const ipM  = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
+          const macM = line.match(/at\s+([0-9a-f:]+)/i);
+          if (ipM && macM && normaliseMac(macM[1]) === mac) { cb(ipM[1]); return; }
+        }
+        cb(null);
+      });
+    }
+    function pingIp(ip, cb) {
+      // -c 1 packet, -W 500ms timeout (macOS ping uses ms for -W)
+      exec(`ping -c 1 -W 500 ${ip}`, cb);
+    }
+    function respond(ip) {
+      res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, ip: ip || null }));
+    }
+
+    findInArp((knownIp) => {
+      if (knownIp) {
+        // Fast path: TV IP already known — ping it directly to wake
+        pingIp(knownIp, () => respond(knownIp));
+      } else {
+        // Slow path: ping-sweep the subnet so the TV wakes on the incoming packet
+        exec("ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null", (_, ifaceIp) => {
+          const subnet = (ifaceIp || '192.168.178.0').trim().split('.').slice(0, 3).join('.');
+          const pings = [];
+          for (let i = 1; i <= 254; i++) {
+            pings.push(new Promise(r => exec(`ping -c 1 -W 500 ${subnet}.${i}`, r)));
+          }
+          Promise.all(pings).then(() => {
+            // Re-check ARP — TV should now have responded and appeared
+            findInArp((foundIp) => respond(foundIp));
+          });
+        });
+      }
+    });
     return;
   }
 
