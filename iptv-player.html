@@ -514,9 +514,14 @@
               onchange="streamSettings.tvMac=this.value.trim();saveStreamSettings();updateTvBtn()">
             <span style="font-size:12px;color:var(--text3);white-space:nowrap">MAC address</span>
           </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+            <button id="tv-pair-btn" onclick="pairTv()"
+              style="background:var(--surface3);border:1px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--text);font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap">
+              Pair TV
+            </button>
+            <span id="tv-pair-status" style="font-size:12px;color:var(--text3)">Pair once so the TV accepts power-off commands</span>
+          </div>
         </div>
-      </div>
-      <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px;display:none"
       </div>
     </div>
     <div class="modal-foot">
@@ -1348,14 +1353,56 @@ async function toggleTvPower() {
     fetch(`${LOCAL_PROXY}/wake-tv?mac=${encodeURIComponent(streamSettings.tvMac)}`)
       .catch(() => showToast('TV: Wake failed'));
     tvOn = true;
+    updateTvBtn();
   } else {
     showToast('TV: Turning off…');
-    fetch(`${LOCAL_PROXY}/tv-off?mac=${encodeURIComponent(streamSettings.tvMac)}`)
-      .then(r => r.json()).then(d => { if (!d.ok) showToast('TV: ' + (d.error || 'Failed')); })
-      .catch(() => showToast('TV: Could not reach TV'));
-    tvOn = false;
+    try {
+      const r = await fetch(`${LOCAL_PROXY}/tv-off?mac=${encodeURIComponent(streamSettings.tvMac)}`);
+      const d = await r.json();
+      if (d.ok) {
+        tvOn = false;
+      } else if (d.error === 'pair_required') {
+        showToast('TV: Pair first — open ⚙ Settings → "Pair TV"', 4000);
+        // don't flip tvOn — state unchanged
+      } else {
+        showToast('TV: ' + (d.error || 'Failed'));
+        tvOn = false; // assume off even if uncertain
+      }
+    } catch(e) {
+      showToast('TV: Could not reach proxy');
+    }
+    updateTvBtn();
   }
-  updateTvBtn();
+}
+
+async function pairTv() {
+  if (!streamSettings.tvMac) { showToast('Enter TV MAC first'); return; }
+  if (!useLocalProxy) { showToast('Local proxy required'); return; }
+  const btn = document.getElementById('tv-pair-btn');
+  const status = document.getElementById('tv-pair-status');
+  btn.disabled = true;
+  btn.textContent = 'Pairing…';
+  status.textContent = 'Accept the dialog on your TV screen…';
+  try {
+    const r = await fetch(`${LOCAL_PROXY}/tv-pair?mac=${encodeURIComponent(streamSettings.tvMac)}`);
+    const d = await r.json();
+    if (d.ok) {
+      status.textContent = d.token ? 'Paired ✓ — power-off ready' : 'Connected ✓ (no token required)';
+      status.style.color = 'var(--green)';
+      showToast('TV paired! Power control is ready.');
+    } else {
+      status.textContent = d.error || 'Pairing failed';
+      status.style.color = 'var(--red)';
+      showToast('Pair failed: ' + (d.error || 'unknown'), 4000);
+    }
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+    showToast('Pairing error: ' + e.message, 4000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Pair TV';
+  }
 }
 
 function showToast(msg, duration = 2500) {
