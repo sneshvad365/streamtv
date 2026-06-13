@@ -18,6 +18,61 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+// Find a device IP from the ARP cache by MAC address
+function findInArpByMac(mac, cb) {
+  const { exec } = require('child_process');
+  const norm = m => m.toLowerCase().split(':').map(h => h.padStart(2, '0')).join(':');
+  exec('arp -an', (err, stdout) => {
+    if (err) { cb(null); return; }
+    for (const line of (stdout || '').split('\n')) {
+      const ipM  = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
+      const macM = line.match(/at\s+([0-9a-f:]+)/i);
+      if (ipM && macM && norm(macM[1]) === norm(mac)) { cb(ipM[1]); return; }
+    }
+    cb(null);
+  });
+}
+
+// ---- Persistent Samsung TV remote connection ----
+// Samsung TVs throttle/ignore clients that rapidly open & close connections.
+// Phone remote apps keep ONE socket alive and reuse it — so do we.
+let _tvWs = null, _tvWsIp = null, _tvWsConnecting = null;
+
+function getTvConnection(ip) {
+  // Reuse a live socket to the same TV
+  if (_tvWs && _tvWsIp === ip && _tvWs.readyState === 1) return Promise.resolve(_tvWs);
+  if (_tvWsConnecting && _tvWsIp === ip) return _tvWsConnecting;
+  if (_tvWs) { try { _tvWs.close(); } catch {} _tvWs = null; }
+  _tvWsIp = ip;
+
+  _tvWsConnecting = new Promise((resolve, reject) => {
+    const appName = Buffer.from('IPTVPlayer').toString('base64');
+    const ws = new WebSocket(`ws://${ip}:8001/api/v2/channels/samsung.remote.control?name=${appName}`);
+    let settled = false;
+    const fail = (msg) => { if (settled) return; settled = true; try { ws.close(); } catch {} if (_tvWs === ws) _tvWs = null; reject(new Error(msg)); };
+    const ready = () => { if (settled) return; settled = true; _tvWs = ws; resolve(ws); };
+    // Resolve only once the socket is genuinely OPEN (the TV may never send
+    // ms.channel.connect, so a short grace after 'open' is enough).
+    ws.addEventListener('open', () => setTimeout(() => { if (ws.readyState === 1) ready(); }, 1000));
+    ws.addEventListener('message', (e) => {
+      try { const m = JSON.parse(e.data); if (m.event === 'ms.channel.connect') ready(); } catch {}
+    });
+    ws.addEventListener('error', () => fail('Could not connect to TV (is it on?)'));
+    ws.addEventListener('close', () => { if (_tvWs === ws) _tvWs = null; fail('TV closed the connection (is it on?)'); });
+    setTimeout(() => fail('Timeout connecting to TV'), 8000);
+  }).finally(() => { _tvWsConnecting = null; });
+  return _tvWsConnecting;
+}
+
+function sendTvKey(ip, key) {
+  return getTvConnection(ip).then((ws) => {
+    ws.send(JSON.stringify({
+      method: 'ms.remote.control',
+      params: { Cmd: 'Click', DataOfCmd: key, Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+    }));
+  });
+}
+
 // Follow redirects without buffering the response body.
 // Resolves with { finalUrl, upstream } where upstream is the unread IncomingMessage.
 function resolveUrl(targetUrl, depth = 0) {
@@ -272,7 +327,7 @@ const server = http.createServer((req, res) => {
       return str.toLowerCase().split(':').map(h => h.padStart(2, '0')).join(':');
     }
     function findInArp(cb) {
-      exec('arp -a', (err, stdout) => {
+      exec('arp -an', (err, stdout) => {
         if (err) { cb(null); return; }
         for (const line of (stdout || '').split('\n')) {
           const ipM  = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
@@ -325,6 +380,34 @@ const server = http.createServer((req, res) => {
     };
     sweepSock.bind(() => {
       for (let i = 1; i <= 254; i++) sweepSock.send(buf, 0, 1, 9, `${subnet}.${i}`, onSent);
+    });
+    return;
+  }
+
+  // GET /tv-off?mac=XX:XX:XX:XX:XX:XX — power off the TV via Samsung WebSocket (KEY_POWER).
+  // Uses a persistent reused connection (ws://:8001). Requires the TV's
+  // Device Connection Manager to allow this controller.
+  if (parsed.pathname === '/tv-off') {
+    const rawMac = parsed.searchParams.get('mac');
+    if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
+    const mac = rawMac.toLowerCase().replace(/-/g, ':').split(':').map(h => h.padStart(2, '0')).join(':');
+
+    findInArpByMac(mac, (ip) => {
+      if (!ip) {
+        res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'TV not found in ARP cache — is it on?' }));
+        return;
+      }
+      sendTvKey(ip, 'KEY_POWER')
+        .then(() => {
+          console.log('[tv-off] KEY_POWER sent to', ip);
+          res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        })
+        .catch((err) => {
+          res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: err.message || 'WebSocket error' }));
+        });
     });
     return;
   }

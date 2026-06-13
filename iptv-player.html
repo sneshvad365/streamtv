@@ -1357,7 +1357,13 @@ function tvWakeOn() {
     .catch(() => showToast('TV: Wake failed'));
 }
 function tvWakeOff() {
-  // Not implemented yet
+  if (!streamSettings.tvMac) { showToast('Configure TV MAC in ⚙ settings'); return; }
+  if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
+  showToast('TV: Turning off…');
+  fetch(`${LOCAL_PROXY}/tv-off?mac=${encodeURIComponent(streamSettings.tvMac)}`)
+    .then(r => r.json())
+    .then(d => { if (!d.ok) showToast('TV: ' + (d.error || 'Failed'), 4000); })
+    .catch(() => showToast('TV: Could not reach proxy'));
 }
 
 // ---- AirPlay (Safari only) ----
