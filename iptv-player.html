@@ -1195,7 +1195,7 @@ function adjustVolume(delta) {
   showVolumeOverlay();
 }
 
-function playChannel(ch) {
+function playChannel(ch, startTime = 0) {
   const video = document.getElementById('player');
   // Leaving a hidden channel — restore mute if we muted it
   if (_mutedByHidden) { video.muted = false; _mutedByHidden = false; }
@@ -1229,6 +1229,7 @@ function playChannel(ch) {
   if (ch.isVod) {
     // VOD files (mp4/mkv) — stream directly through the proxy, no HLS detection needed
     video.src = useLocalProxy ? `${LOCAL_PROXY}/proxy?url=${encodeURIComponent(ch.url)}` : ch.url;
+    if (startTime > 0) video.addEventListener('loadedmetadata', () => { try { video.currentTime = startTime; } catch {} }, { once: true });
     video.play().catch(() => {});
     return;
   }
@@ -1303,17 +1304,36 @@ function toggleTransparentSidebar() {
   if (resizer) resizer.style.display = on ? 'none' : '';
   if (on) { resetTransparentTimer(); } else {
     clearTimeout(_transparentHideTimer); sidebar.style.opacity = ''; topbar.style.opacity = '';
-    // Clamp PiP position after layout shift
-    requestAnimationFrame(() => {
-      const wrap = document.getElementById('pip-wrap');
-      if (wrap.style.display === 'none') return;
-      const parent = wrap.parentElement;
-      const maxX = parent.clientWidth - wrap.offsetWidth;
-      const maxY = parent.clientHeight - wrap.offsetHeight;
-      if (wrap.style.left) wrap.style.left = Math.max(0, Math.min(maxX, parseInt(wrap.style.left))) + 'px';
-      if (wrap.style.top)  wrap.style.top  = Math.max(0, Math.min(maxY, parseInt(wrap.style.top)))  + 'px';
-    });
   }
+  // Layout changes in both directions — recalc PiP position so it stays on screen.
+  // Double rAF ensures the sidebar's width change has fully reflowed first.
+  requestAnimationFrame(() => requestAnimationFrame(clampPip));
+}
+
+// Keep the PiP fully inside its container after any layout change.
+// Reads the actual rendered position (works whether anchored by left/top or
+// right/bottom) and re-pins it with clamped left/top.
+function clampPip() {
+  const wrap = document.getElementById('pip-wrap');
+  if (!wrap || wrap.style.display === 'none') return;
+  const parent = wrap.parentElement;
+  if (!parent) return;
+  const pw = parent.clientWidth, ph = parent.clientHeight;
+  // Shrink the PiP if the container is now smaller than it
+  let ww = wrap.offsetWidth, wh = wrap.offsetHeight;
+  if (ww > pw) { wrap.style.width = pw + 'px'; ww = pw; }
+  if (wh > ph) { wrap.style.height = ph + 'px'; wh = ph; }
+  // Current rendered position relative to the container
+  const pr = parent.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  const maxX = Math.max(0, pw - ww);
+  const maxY = Math.max(0, ph - wh);
+  const left = Math.max(0, Math.min(maxX, wr.left - pr.left));
+  const top  = Math.max(0, Math.min(maxY, wr.top  - pr.top));
+  wrap.style.left = left + 'px';
+  wrap.style.top  = top + 'px';
+  wrap.style.right = 'auto';
+  wrap.style.bottom = 'auto';
 }
 
 let _stallWatchdog = null;
@@ -1422,7 +1442,7 @@ function closePip() {
   pipChannel = null;
 }
 
-async function playPip(ch) {
+async function playPip(ch, startTime = 0) {
   pipChannel = ch;
   const wrap = document.getElementById('pip-wrap');
   const video = document.getElementById('pip-player');
@@ -1430,6 +1450,17 @@ async function playPip(ch) {
   video.removeAttribute('src');
   document.getElementById('pip-label').textContent = ch.name;
   wrap.style.display = '';
+  requestAnimationFrame(clampPip); // ensure it opens fully on screen
+
+  // VOD (movies) are mp4/mkv files — stream directly through the proxy, no HLS.
+  if (ch.isVod) {
+    video.muted = true;
+    video.src = useLocalProxy ? `${LOCAL_PROXY}/proxy?url=${encodeURIComponent(ch.url)}` : ch.url;
+    if (startTime > 0) video.addEventListener('loadedmetadata', () => { try { video.currentTime = startTime; } catch {} }, { once: true });
+    video.play().catch(() => {});
+    showToast(`PiP: ${ch.name}`);
+    return;
+  }
 
   const streamUrl = useLocalProxy
     ? `${LOCAL_PROXY}/hls?url=${encodeURIComponent(ch.url)}`
@@ -1528,6 +1559,7 @@ setupAirplay();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
+window.addEventListener('resize', debounce(clampPip, 150));
 document.addEventListener('mousemove', debounce(resetTransparentTimer, 100), { passive: true });
 document.getElementById('channel-list').addEventListener('dragover', (e) => e.preventDefault());
 document.getElementById('channel-list').addEventListener('drop', (e) => {
@@ -1567,8 +1599,11 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'b' || e.key === 'B') {
     if (pipChannel && currentChannel) {
       const main = currentChannel, pip = pipChannel;
-      playChannel(pip);
-      playPip(main);
+      // Preserve playback position for VOD so movies don't restart on swap
+      const mainTime = document.getElementById('player').currentTime || 0;
+      const pipTime  = document.getElementById('pip-player').currentTime || 0;
+      playChannel(pip, pip.isVod ? pipTime : 0);   // PiP → main, resume where it was
+      playPip(main, main.isVod ? mainTime : 0);    // main → PiP, resume where it was
     } else { showToast('No PiP channel to swap'); }
   } else if (e.key === 'u' || e.key === 'U') {
     const main = document.getElementById('player');
