@@ -117,7 +117,7 @@
   .vol-overlay.show { opacity: 1; }
   .channel-item.kbd-selected { background: var(--surface3, rgba(255,255,255,0.08)); outline: 1px solid var(--accent); }
   .sidebar.transparent-overlay .channel-item.kbd-selected { outline: none; background: transparent; }
-  .sidebar.transparent-overlay .channel-item.kbd-selected .ch-name { font-size: 13px; font-weight: 700; color: #ffb3b3; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 6px #000; }
+  .sidebar.transparent-overlay .channel-item.kbd-selected .ch-name { font-size: 26px; font-weight: 700; color: #ffb3b3; text-shadow: -2px -2px 0 #000, 0 -2px 0 #000, 2px -2px 0 #000, -2px 0 0 #000, 2px 0 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 2px 0 #000, 0 0 8px #000; }
   .channel-item[draggable=true] { cursor: default; }
   .channel-item[draggable=true] .ch-logo-wrap { cursor: grab; }
   .channel-item.dragging { opacity: 0.4; }
@@ -135,8 +135,8 @@
   .sidebar.transparent-overlay .channel-item.active { background: rgba(255,255,255,0.12); }
   .sidebar.transparent-overlay .categories { background: transparent; }
   .sidebar.transparent-overlay .ch-logo-wrap { display: none; }
-  .sidebar.transparent-overlay .ch-name { color: #fff; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 4px #000; }
-  .sidebar.transparent-overlay .ch-meta { color: rgba(255,255,255,0.6); text-shadow: 0 1px 3px #000; }
+  .sidebar.transparent-overlay .ch-name { font-size: 22px; font-weight: 600; color: #fff; text-shadow: -2px -2px 0 #000, 0 -2px 0 #000, 2px -2px 0 #000, -2px 0 0 #000, 2px 0 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 2px 0 #000, 0 0 6px #000; }
+  .sidebar.transparent-overlay .ch-meta { display: none; }
   .sidebar.transparent-overlay .channel-list { padding-left: 2px; }
   .sidebar.transparent-overlay .channel-list::-webkit-scrollbar-thumb { background: transparent; }
   .sidebar.transparent-overlay .channel-list::-webkit-scrollbar-track { background: transparent; }
@@ -305,6 +305,7 @@
     <div id="tv-controls" style="display:none;align-items:center;gap:6px;margin-right:4px">
       <button class="btn tv-on-btn" id="tv-on-btn" onclick="tvWakeOn()" title="Turn TV on (=)">ON</button>
       <button class="btn" id="tv-off-btn" onclick="tvWakeOff()" title="Turn TV off">OFF</button>
+      <button class="btn" id="tv-hdmi2-btn" onclick="tvHdmi2()" title="Switch TV to HDMI 2">HDMI2</button>
     </div>
     <button class="btn" id="airplay-btn" onclick="startAirplay()" title="AirPlay to TV" style="display:none;align-items:center;gap:6px;margin-right:4px">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/><path d="m12 15 5 6H7l5-6z" fill="currentColor"/></svg>
@@ -1361,6 +1362,15 @@ function tvWakeOff() {
   if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
   showToast('TV: Turning off…');
   fetch(`${LOCAL_PROXY}/tv-off?mac=${encodeURIComponent(streamSettings.tvMac)}`)
+    .then(r => r.json())
+    .then(d => { if (!d.ok) showToast('TV: ' + (d.error || 'Failed'), 4000); })
+    .catch(() => showToast('TV: Could not reach proxy'));
+}
+function tvHdmi2() {
+  if (!streamSettings.tvMac) { showToast('Configure TV MAC in ⚙ settings'); return; }
+  if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
+  showToast('TV: Switching to HDMI 2…');
+  fetch(`${LOCAL_PROXY}/tv-key?mac=${encodeURIComponent(streamSettings.tvMac)}&key=KEY_HDMI2`)
     .then(r => r.json())
     .then(d => { if (!d.ok) showToast('TV: ' + (d.error || 'Failed'), 4000); })
     .catch(() => showToast('TV: Could not reach proxy'));

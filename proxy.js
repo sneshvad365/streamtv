@@ -412,6 +412,35 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // GET /tv-key?mac=XX:XX:XX:XX:XX:XX&key=KEY_HDMI2 — send any Samsung remote key.
+  // Uses the same persistent connection. Only allows KEY_* names.
+  if (parsed.pathname === '/tv-key') {
+    const rawMac = parsed.searchParams.get('mac');
+    const key = parsed.searchParams.get('key');
+    if (!rawMac) { res.writeHead(400, CORS_HEADERS); res.end('Missing ?mac='); return; }
+    if (!key || !/^KEY_[A-Z0-9_]+$/.test(key)) { res.writeHead(400, CORS_HEADERS); res.end('Invalid ?key='); return; }
+    const mac = rawMac.toLowerCase().replace(/-/g, ':').split(':').map(h => h.padStart(2, '0')).join(':');
+
+    findInArpByMac(mac, (ip) => {
+      if (!ip) {
+        res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'TV not found in ARP cache — is it on?' }));
+        return;
+      }
+      sendTvKey(ip, key)
+        .then(() => {
+          console.log('[tv-key]', key, 'sent to', ip);
+          res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        })
+        .catch((err) => {
+          res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: err.message || 'WebSocket error' }));
+        });
+    });
+    return;
+  }
+
   if (parsed.pathname === '/proxy') {
     const target = parsed.searchParams.get('url');
     if (!target) {
