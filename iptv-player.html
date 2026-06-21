@@ -159,6 +159,8 @@
   #pip-label { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 8px; font-size: 11px; font-weight: 500; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.7)); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #pip-close { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.6); border: none; color: #fff; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; line-height: 1; padding: 0; }
   #pip-wrap:hover #pip-close { opacity: 1; }
+  #pip-swap { position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.6); border: none; color: #fff; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; line-height: 1; padding: 0; }
+  #pip-wrap:hover #pip-swap { opacity: 1; }
   #pip-resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; cursor: nwse-resize; opacity: 0; transition: opacity 0.15s; background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.5) 40%, rgba(255,255,255,0.5) 55%, transparent 55%, transparent 65%, rgba(255,255,255,0.5) 65%, rgba(255,255,255,0.5) 80%, transparent 80%); }
   #pip-wrap:hover #pip-resize { opacity: 1; }
   .stall-toast { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 8px; padding: 8px 16px; font-size: 13px; color: #fff; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 10; white-space: nowrap; }
@@ -406,6 +408,7 @@
       <div id="pip-wrap" style="display:none">
         <video id="pip-player" playsinline></video>
         <div id="pip-label"></div>
+        <button id="pip-swap" title="Swap with main channel [B]">⇄</button>
         <button id="pip-close" title="Close PiP">✕</button>
         <div id="pip-resize" title="Resize"></div>
       </div>
@@ -1372,38 +1375,7 @@ function playChannel(ch, startTime = 0) {
       }
       requestAnimationFrame(waitForBuffer);
     });
-    // Auto-recover from transient fatal errors (the usual cause of a "stall") BEFORE
-    // giving up — this is hls.js's recommended recovery and keeps streams self-healing.
-    // Only after retries are exhausted do we surface the persistent error panel.
-    let netRetries = 0, mediaRetries = 0;
-    _hls.on(Hls.Events.ERROR, (_, data) => {
-      if (!data.fatal) return;
-      console.warn('HLS fatal error', data.type, data.details);
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < 3) {
-        netRetries++;
-        showBuffering();
-        setTimeout(() => { if (_hls) _hls.startLoad(); }, 1000 * netRetries);
-        return;
-      }
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 2) {
-        mediaRetries++;
-        showBuffering();
-        try { _hls.recoverMediaError(); } catch {}
-        return;
-      }
-      // Recovery exhausted — show a clear, persistent error with a Retry button.
-      let title = 'Playback error';
-      let hint = 'This channel could not be played. Try another channel.';
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-        title = 'Can’t load this stream';
-        hint = useLocalProxy
-          ? 'The stream or the local proxy is unreachable. Check that proxy.js is still running and that the channel is online.'
-          : 'The stream is unreachable, and the local proxy isn’t running. Start it with “node proxy.js”, then retry.';
-      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-        hint = 'The video stream is corrupted or uses an unsupported format. Try another channel.';
-      }
-      showStreamError(title, hint);
-    });
+    attachHlsRecovery(_hls);
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     // Safari native HLS
     video.src = streamUrl;
@@ -1542,19 +1514,26 @@ function startAirplay() {
 }
 
 function setupAirplay() {
-  const video = document.getElementById('player');
   const btn = document.getElementById('airplay-btn');
-  if (!btn || !video.webkitShowPlaybackTargetPicker) return; // not Safari — leave hidden
+  const probe = document.getElementById('player');
+  if (!btn || !probe.webkitShowPlaybackTargetPicker) return; // not Safari — leave hidden
 
-  // Show the button only when at least one AirPlay target is available on the network.
-  video.addEventListener('webkitplaybacktargetavailabilitychanged', (e) => {
-    btn.style.display = (e.availability === 'available') ? 'inline-flex' : 'none';
-  });
-  // Reflect active casting state on the button.
-  video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
-    const casting = !!video.webkitCurrentPlaybackTargetIsWireless;
-    btn.classList.toggle('casting', casting);
-    btn.title = casting ? 'AirPlay: connected (click to change)' : 'AirPlay to TV';
+  // Bind to both videos; only the current main (id === 'player') drives the button, so
+  // AirPlay availability/casting state follows a PiP↔main swap.
+  ['player', 'pip-player'].forEach(id => {
+    const video = document.getElementById(id);
+    // Show the button only when at least one AirPlay target is available on the network.
+    video.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) {
+      if (this.id !== 'player') return;
+      btn.style.display = (e.availability === 'available') ? 'inline-flex' : 'none';
+    });
+    // Reflect active casting state on the button.
+    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', function () {
+      if (this.id !== 'player') return;
+      const casting = !!this.webkitCurrentPlaybackTargetIsWireless;
+      btn.classList.toggle('casting', casting);
+      btn.title = casting ? 'AirPlay: connected (click to change)' : 'AirPlay to TV';
+    });
   });
 }
 
@@ -1583,6 +1562,43 @@ function pipFromUI() {
     || (selectedIndex >= 0 && selectedIndex < filtered.length ? filtered[selectedIndex] : null);
   if (ch) playPip(ch);
   else showToast('Play or select a channel first, then add it to PiP');
+}
+
+// Attach self-healing error recovery to an hls.js instance. It captures THIS instance (so it
+// still targets the right stream after a PiP↔main swap exchanges _hls/_pipHls) and only shows
+// the persistent error panel when this instance is the current main — a background PiP failure
+// recovers silently. Shared by both playChannel and playPip.
+function attachHlsRecovery(hls) {
+  let netRetries = 0, mediaRetries = 0;
+  hls.on(Hls.Events.ERROR, (_, data) => {
+    if (!data.fatal) return;
+    console.warn('HLS fatal error', data.type, data.details);
+    const isMain = (hls === _hls);
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < 3) {
+      netRetries++;
+      if (isMain) showBuffering();
+      setTimeout(() => { try { hls.startLoad(); } catch {} }, 1000 * netRetries);
+      return;
+    }
+    if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 2) {
+      mediaRetries++;
+      if (isMain) showBuffering();
+      try { hls.recoverMediaError(); } catch {}
+      return;
+    }
+    if (!isMain) return; // background PiP failed after retries — don't disrupt the main view
+    let title = 'Playback error';
+    let hint = 'This channel could not be played. Try another channel.';
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+      title = 'Can’t load this stream';
+      hint = useLocalProxy
+        ? 'The stream or the local proxy is unreachable. Check that proxy.js is still running and that the channel is online.'
+        : 'The stream is unreachable, and the local proxy isn’t running. Start it with “node proxy.js”, then retry.';
+    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+      hint = 'The video stream is corrupted or uses an unsupported format. Try another channel.';
+    }
+    showStreamError(title, hint);
+  });
 }
 
 function closePip() {
@@ -1622,7 +1638,7 @@ async function playPip(ch, startTime = 0) {
     _pipHls.loadSource(streamUrl);
     _pipHls.attachMedia(video);
     _pipHls.on(Hls.Events.MANIFEST_PARSED, () => { video.muted = true; video.play().catch(() => {}); });
-    _pipHls.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) console.warn('PiP HLS error', data); });
+    attachHlsRecovery(_pipHls);
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.muted = true;
     video.src = streamUrl;
@@ -1631,8 +1647,58 @@ async function playPip(ch, startTime = 0) {
   showToast(`PiP: ${ch.name}`);
 }
 
+// Swap the PiP and main channels INSTANTLY — no reload. We don't move the streams between
+// elements (that would re-buffer); we swap the two <video> elements' ROLES: reparent the
+// nodes, swap their ids + role attributes, and swap the bookkeeping vars. The hls.js
+// instances are never touched, so playback continues from the existing buffer.
+function swapMainPip() {
+  if (!currentChannel || !pipChannel) { showToast('No PiP channel to swap'); return; }
+  const elMain = document.getElementById('player');
+  const elPip  = document.getElementById('pip-player');
+  const pipWrap = document.getElementById('pip-wrap');
+  const videoWrap = elMain.parentElement;
+
+  // Reparent synchronously (browsers keep a <video> playing across a sync DOM move).
+  videoWrap.insertBefore(elPip, elMain);             // PiP video → main slot
+  pipWrap.insertBefore(elMain, pipWrap.firstChild);  // main video → PiP box
+
+  // Swap ids so the rest of the app (which addresses videos by id) targets the right ones.
+  elMain.id = 'pip-player';
+  elPip.id = 'player';
+
+  // Swap bookkeeping — after this, currentChannel/_hls refer to the newly-promoted stream.
+  [_hls, _pipHls] = [_pipHls, _hls];
+  [currentChannel, pipChannel] = [pipChannel, currentChannel];
+
+  // Apply roles: new main (elPip) gets controls + audio; new pip (elMain) is muted, chrome-less.
+  elPip.setAttribute('controls', '');
+  elPip.muted = hiddenChannels.includes(currentChannel.name);
+  _mutedByHidden = elPip.muted;
+  elMain.removeAttribute('controls');
+  elMain.muted = true;
+  elMain.classList.remove('cropped');
+  applyPersistedCrop(); // re-applies crop to the new #player if enabled
+
+  // Labels, recents, guide.
+  document.getElementById('np-overlay').textContent = currentChannel.name;
+  document.getElementById('topbar-channel').textContent = currentChannel.name;
+  document.getElementById('pip-label').textContent = pipChannel.name;
+  addToRecent(currentChannel.name);
+  renderChannels();
+  if (!currentChannel.isVod) renderEPG(currentChannel);
+
+  // Restart the stall watchdog for the new main (the old one self-clears on next tick).
+  startStallWatchdog(currentChannel);
+
+  // Safety net: resume from buffer if the reparent paused anything (never a network reload).
+  document.getElementById('player').play().catch(() => {});
+  document.getElementById('pip-player').play().catch(() => {});
+  clampPip();
+}
+
 // Close button
 document.getElementById('pip-close').addEventListener('click', closePip);
+document.getElementById('pip-swap').addEventListener('click', (e) => { e.stopPropagation(); swapMainPip(); });
 
 // Drag + resize + localStorage persistence for PiP
 (function() {
@@ -1662,7 +1728,7 @@ document.getElementById('pip-close').addEventListener('click', closePip);
   // Drag
   let mode = null, ox = 0, oy = 0, ow = 0, oh = 0;
   wrap.addEventListener('mousedown', (e) => {
-    if (e.target === document.getElementById('pip-close') || e.target === resizeHandle) return;
+    if (e.target === document.getElementById('pip-close') || e.target === document.getElementById('pip-swap') || e.target === resizeHandle) return;
     mode = 'drag';
     ox = e.clientX - wrap.offsetLeft; oy = e.clientY - wrap.offsetTop;
     e.preventDefault();
@@ -1710,16 +1776,21 @@ setupAirplay();
 
 // Drive the buffering spinner and error panel from the main video element's state.
 (function setupPlayerStateUI() {
-  const v = document.getElementById('player');
-  v.addEventListener('waiting', showBuffering);
-  v.addEventListener('playing', () => { hideBuffering(); hideStreamError(); });
-  v.addEventListener('pause', hideBuffering);
-  v.addEventListener('error', () => {
-    if (_hls) return; // hls.js manages its own errors/recovery; this is for native/VOD only
-    if (currentChannel && v.error) {
-      showStreamError('Can’t play this channel',
-        'The stream is unavailable or in an unsupported format. Try another channel, or refresh the playlist.');
-    }
+  // Attach to BOTH video elements; the spinner/error UI follows whichever element is the
+  // current main (id === 'player'), so it keeps working across a PiP↔main swap.
+  ['player', 'pip-player'].forEach(id => {
+    const v = document.getElementById(id);
+    v.addEventListener('waiting', function () { if (this.id === 'player') showBuffering(); });
+    v.addEventListener('playing', function () { if (this.id === 'player') { hideBuffering(); hideStreamError(); } });
+    v.addEventListener('pause', function () { if (this.id === 'player') hideBuffering(); });
+    v.addEventListener('error', function () {
+      if (this.id !== 'player') return;
+      if (_hls) return; // hls.js manages its own errors/recovery; this is for native/VOD only
+      if (currentChannel && this.error) {
+        showStreamError('Can’t play this channel',
+          'The stream is unavailable or in an unsupported format. Try another channel, or refresh the playlist.');
+      }
+    });
   });
 })();
 
@@ -1781,14 +1852,7 @@ document.addEventListener('keydown', (e) => {
     if (ch) playPip(ch);
     else showToast('Select a channel first (↑↓), then press V for PiP');
   } else if (e.key === 'b' || e.key === 'B') {
-    if (pipChannel && currentChannel) {
-      const main = currentChannel, pip = pipChannel;
-      // Preserve playback position for VOD so movies don't restart on swap
-      const mainTime = document.getElementById('player').currentTime || 0;
-      const pipTime  = document.getElementById('pip-player').currentTime || 0;
-      playChannel(pip, pip.isVod ? pipTime : 0);   // PiP → main, resume where it was
-      playPip(main, main.isVod ? mainTime : 0);    // main → PiP, resume where it was
-    } else { showToast('No PiP channel to swap'); }
+    swapMainPip();
   } else if (e.key === 'u' || e.key === 'U') {
     const main = document.getElementById('player');
     const pip = document.getElementById('pip-player');
