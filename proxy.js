@@ -220,9 +220,31 @@ const server = http.createServer((req, res) => {
 
   // POST /cache — save channel list to disk
   if (req.method === 'POST' && parsed.pathname === '/cache') {
+    const MAX_CACHE_BYTES = 200 * 1024 * 1024; // 200 MB hard cap — guards against memory exhaustion
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let size = 0;
+    let aborted = false;
+    req.on('data', chunk => {
+      if (aborted) return;
+      size += chunk.length;
+      if (size > MAX_CACHE_BYTES) {
+        aborted = true;
+        res.writeHead(413, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Cache payload too large' }));
+        req.destroy();
+        return;
+      }
+      body += chunk;
+    });
     req.on('end', () => {
+      if (aborted) return;
+      // Validate it is well-formed JSON before persisting, so a corrupt POST can't poison the cache.
+      try { JSON.parse(body); }
+      catch {
+        res.writeHead(400, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        return;
+      }
       fs.writeFile(CACHE_FILE, body, (err) => {
         if (err) {
           res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });

@@ -79,7 +79,7 @@
   .channel-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
   .channel-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background 0.1s; height: 52px; box-sizing: border-box; }
   .channel-item:hover { background: var(--surface2); }
-  .channel-item.active { background: var(--surface3); border: 1px solid var(--border2); }
+  .channel-item.active { background: var(--surface3); border: 1px solid var(--border2); box-shadow: inset 3px 0 0 var(--accent); }
   .ch-logo-wrap { position: relative; flex-shrink: 0; }
   .ch-logo-wrap.removable:hover .ch-logo { opacity: 0.35; }
   .ch-logo-wrap.removable::after { content: '×'; position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 17px; font-weight: 400; color: var(--red); pointer-events: none; }
@@ -117,7 +117,7 @@
   .vol-overlay.show { opacity: 1; }
   .channel-item.kbd-selected { background: var(--surface3, rgba(255,255,255,0.08)); outline: 1px solid var(--accent); }
   .sidebar.transparent-overlay .channel-item.kbd-selected { outline: none; background: transparent; }
-  .sidebar.transparent-overlay .channel-item.kbd-selected .ch-name { font-size: 26px; font-weight: 700; color: #ff5252; text-shadow: -2px -2px 0 #000, 0 -2px 0 #000, 2px -2px 0 #000, -2px 0 0 #000, 2px 0 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 2px 0 #000, 0 0 8px #000; }
+  .sidebar.transparent-overlay .channel-item.kbd-selected .ch-name { font-size: 26px; font-weight: 700; color: #5ad1ff; text-shadow: -2px -2px 0 #000, 0 -2px 0 #000, 2px -2px 0 #000, -2px 0 0 #000, 2px 0 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 2px 0 #000, 0 0 8px #000; }
   .channel-item[draggable=true] { cursor: default; }
   .channel-item[draggable=true] .ch-logo-wrap { cursor: grab; }
   .channel-item.dragging { opacity: 0.4; }
@@ -129,7 +129,7 @@
   .transparent-topbar { transition: opacity 1s ease; }
   .sidebar.transparent-overlay .sidebar-tabs { background: transparent; border-bottom-color: transparent; }
   .sidebar.transparent-overlay .tab { color: rgba(255,255,255,0.7); text-shadow: 0 1px 3px #000, 0 0 6px #000; }
-  .sidebar.transparent-overlay .tab.active { color: #ff5252; border-bottom-color: #ff5252; }
+  .sidebar.transparent-overlay .tab.active { color: #5ad1ff; border-bottom-color: #5ad1ff; }
   .sidebar.transparent-overlay .channel-item { background: transparent; }
   .sidebar.transparent-overlay .channel-item:hover { background: rgba(255,255,255,0.08); }
   .sidebar.transparent-overlay .channel-item.active { background: rgba(255,255,255,0.12); }
@@ -147,6 +147,8 @@
   .transparent-topbar #prev-btn,
   .transparent-topbar #crop-btn,
   .transparent-topbar #epg-toggle-btn,
+  .transparent-topbar #pip-btn,
+  .transparent-topbar #net-status,
   .transparent-topbar #proxy-badge,
   .transparent-topbar #cache-badge,
   .transparent-topbar #refresh-btn,
@@ -164,6 +166,32 @@
   .vol-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.2); border-radius: 2px; }
   .vol-fill { height: 100%; background: #fff; border-radius: 2px; transition: width 0.1s; }
   .vol-label { font-size: 11px; color: #fff; font-family: 'DM Mono', monospace; min-width: 38px; text-align: right; }
+
+  /* BUFFERING SPINNER */
+  .player-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; pointer-events: none; z-index: 4; }
+  .player-loading.show { display: flex; }
+  .spinner { width: 46px; height: 46px; border: 3px solid rgba(255,255,255,0.18); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .player-loading .loading-text { font-size: 12px; color: rgba(255,255,255,0.6); font-family: 'DM Mono', monospace; letter-spacing: 0.05em; }
+
+  /* STREAM ERROR PANEL */
+  .player-error { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px; padding: 24px; text-align: center; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 5; }
+  .player-error.show { display: flex; }
+  .player-error .err-icon { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,77,106,0.15); border: 2px solid var(--red); display: flex; align-items: center; justify-content: center; color: var(--red); font-size: 26px; font-weight: 600; line-height: 1; }
+  .player-error .err-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .player-error .err-hint { font-size: 12px; color: var(--text2); max-width: 380px; line-height: 1.5; }
+  .player-error .err-retry { margin-top: 6px; pointer-events: auto; }
+
+  /* ACTION TOAST (with Undo) */
+  .action-toast { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--border2); border-radius: 8px; padding: 9px 12px 9px 16px; font-size: 13px; color: #fff; display: none; align-items: center; gap: 14px; z-index: 11; white-space: nowrap; }
+  .action-toast.show { display: flex; }
+  .action-toast button { background: transparent; border: none; color: var(--accent2); font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; padding: 2px 4px; }
+  .action-toast button:hover { color: var(--text); text-decoration: underline; }
+
+  /* NETWORK STATUS DOT */
+  .net-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; transition: background 0.2s; cursor: default; }
+  .net-dot.offline { background: var(--red); }
+  .net-dot.warn { background: var(--amber); }
 
   /* EPG */
   .epg-panel { height: var(--epg-h); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
@@ -247,7 +275,11 @@
     .topbar-actions { padding: 0 8px; gap: 6px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #epg-toggle-btn { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #epg-toggle-btn, #pip-btn, #transparent-btn, #net-status { display: none !important; }
+
+    /* Larger, more legible channel text on phones */
+    .ch-name { font-size: 14px; }
+    .ch-meta { font-size: 12px; }
     .topbar { height: calc(48px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px); }
 
     /* Layout — video on top, list below */
@@ -334,7 +366,10 @@
     <div style="flex:1"></div>
     <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
     <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
+    <button class="btn" id="pip-btn" onclick="pipFromUI()" title="Picture-in-Picture — watch a second channel in a floating window [V]">▣ PiP</button>
+    <button class="btn" id="transparent-btn" onclick="toggleTransparentSidebar()" title="TV overlay — transparent channel list over the video [T]">◧ Overlay</button>
     <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
+    <span id="net-status" class="net-dot" title="Online"></span>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
     <button class="btn" id="refresh-btn" onclick="refreshChannels()" style="display:none" title="Re-fetch channels from provider">↻ Refresh</button>
@@ -382,6 +417,14 @@
       </div>
       <div class="np-overlay" id="np-overlay"></div>
       <div class="stall-toast" id="stall-toast">Reloading stream…</div>
+      <div class="player-loading" id="player-loading"><div class="spinner"></div><div class="loading-text">Loading…</div></div>
+      <div class="player-error" id="player-error">
+        <div class="err-icon">!</div>
+        <div class="err-title"></div>
+        <div class="err-hint"></div>
+        <button class="btn err-retry" onclick="if(currentChannel)playChannel(currentChannel)">↻ Retry</button>
+      </div>
+      <div class="action-toast" id="action-toast"><span class="at-msg"></span><button class="at-undo">Undo</button></div>
       <div class="stream-info" id="stream-info"></div>
       <div class="vol-overlay" id="vol-overlay">
         <span style="font-size:10px;color:rgba(255,255,255,0.5);font-family:'DM Mono',monospace;letter-spacing:0.05em">VOL</span>
@@ -498,7 +541,7 @@
           <input id="overlay-timeout-input" type="number" min="5" max="300" step="5"
             style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px"
             onchange="streamSettings.overlayTimeout=Math.max(5,Math.min(300,+this.value||15));saveStreamSettings()">
-          <span style="font-size:12px;color:var(--text3)">seconds — hide channel list in transparent mode</span>
+          <span style="font-size:12px;color:var(--text3)">seconds before the channel list auto-hides in TV overlay mode (5–300, default 15)</span>
         </div>
       </div>
       <div class="field" style="margin-top:14px">
@@ -507,7 +550,7 @@
           <input id="stall-timeout-input" type="number" min="5" max="120" step="5"
             style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text1);font-size:13px"
             onchange="streamSettings.stallTimeout=Math.max(5,Math.min(120,+this.value||30));saveStreamSettings()">
-          <span style="font-size:12px;color:var(--text3)">seconds — reload if stream stalls</span>
+          <span style="font-size:12px;color:var(--text3)">seconds of no progress before a frozen stream auto-reloads (5–120, default 30)</span>
         </div>
       </div>
       <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px">
@@ -524,7 +567,8 @@
           </div>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px;display:none"
+      <div style="font-size:11px;color:var(--text3);line-height:1.7;margin-top:4px">
+        Find the MAC under TV Settings → General → Network → Network Status. The local proxy (<code style="font-family:'DM Mono',monospace">node proxy.js</code>) must be running for TV control.
       </div>
     </div>
     <div class="modal-foot">
@@ -590,17 +634,42 @@ function toggleSearchRegex(which) {
   }
 }
 
+// Escape text for safe interpolation into innerHTML (channel names/groups come from
+// untrusted M3U playlists, so never inject them raw).
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+// Only allow http(s) logo URLs — blocks javascript:/data: and attribute-breaking values.
+function safeLogo(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url, location.href);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+  } catch { return ''; }
+}
+
+// Compile a search regex at most once per distinct pattern, and cap its length, to
+// blunt ReDoS: pathological patterns can't be re-instantiated thousands of times per
+// keystroke, and an over-long pattern is rejected outright. Returns a RegExp, or false
+// if the pattern is invalid / too long.
+let _reCache = { src: null, re: null };
+function compileRe(q) {
+  if (_reCache.src === q) return _reCache.re;
+  let re = false;
+  if (q.length <= 200) { try { re = new RegExp(q, 'i'); } catch { re = false; } }
+  _reCache = { src: q, re };
+  return re;
+}
+
 function matchStr(str, q, isRegex, inputId) {
   if (!q) return true;
   if (isRegex) {
-    try {
-      const ok = new RegExp(q, 'i').test(str);
-      if (inputId) document.getElementById(inputId)?.classList.remove('regex-error');
-      return ok;
-    } catch {
-      if (inputId) document.getElementById(inputId)?.classList.add('regex-error');
-      return false;
-    }
+    const re = compileRe(q);
+    if (!re) { if (inputId) document.getElementById(inputId)?.classList.add('regex-error'); return false; }
+    if (inputId) document.getElementById(inputId)?.classList.remove('regex-error');
+    return re.test(str);
   }
   return str.toLowerCase().includes(q.toLowerCase());
 }
@@ -939,7 +1008,9 @@ function buildChannelItem(ch, idx) {
   const isRecent = currentTab === 'recent';
   const meta = ch.isVod && ch.rating ? `★ ${parseFloat(ch.rating).toFixed(1)}` : ch.group;
   item.title = ch.isVod && ch.plot ? ch.plot : '';
-  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${ch.logo ? `<img src="${ch.logo}" onerror="this.parentElement.textContent='${initials}'" alt="">` : initials}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div><div class="hide-btn ${isHidden ? 'active' : ''}" title="Hide channel">◉</div></div><div class="ch-info"><div class="ch-name">${ch.name}</div><div class="ch-meta">${meta}</div></div>`;
+  const logo = safeLogo(ch.logo);
+  const safeInitials = initials.replace(/[^A-Z0-9?]/gi, '');
+  item.innerHTML = `<div class="ch-logo-wrap${isRecent ? ' removable' : ''}"><div class="ch-logo">${logo ? `<img src="${esc(logo)}" referrerpolicy="no-referrer" onerror="this.parentElement.textContent='${safeInitials}'" alt="">` : esc(initials)}</div><div class="fav-btn ${isFav ? 'active' : ''}" title="Favourite">&#9733;</div><div class="hide-btn ${isHidden ? 'active' : ''}" title="Hide channel">◉</div></div><div class="ch-info"><div class="ch-name">${esc(ch.name)}</div><div class="ch-meta">${esc(meta)}</div></div>`;
   item.querySelector('.fav-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleFav(ch, item.querySelector('.fav-btn')); });
   item.querySelector('.hide-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleHidden(ch, item.querySelector('.hide-btn')); });
   if (isRecent) {
@@ -1024,10 +1095,38 @@ function toggleFav(ch, btn) {
 }
 
 function toggleHidden(ch, btn) {
-  if (hiddenChannels.includes(ch.name)) { hiddenChannels = hiddenChannels.filter(n => n !== ch.name); btn.classList.remove('active'); }
+  const wasHidden = hiddenChannels.includes(ch.name);
+  if (wasHidden) { hiddenChannels = hiddenChannels.filter(n => n !== ch.name); btn.classList.remove('active'); }
   else { hiddenChannels.push(ch.name); btn.classList.add('active'); }
   saveHidden();
   if (!showHidden) renderChannels();
+  // Hiding removes the channel from view with no other cue — offer an explicit undo.
+  if (!wasHidden) {
+    showUndoToast(`Hidden “${ch.name}” — press ? to show all hidden`, () => {
+      hiddenChannels = hiddenChannels.filter(n => n !== ch.name);
+      saveHidden();
+      renderChannels();
+    });
+  }
+}
+
+// Toast with an Undo action (for reversible destructive actions like hiding a channel).
+let _actionToastTimer = null;
+function showUndoToast(msg, undoFn, duration = 6000) {
+  const toast = document.getElementById('action-toast');
+  toast.querySelector('.at-msg').textContent = msg;
+  // Replace the button to clear any previous click handler.
+  const oldBtn = toast.querySelector('.at-undo');
+  const btn = oldBtn.cloneNode(true);
+  oldBtn.replaceWith(btn);
+  btn.addEventListener('click', () => {
+    clearTimeout(_actionToastTimer);
+    toast.classList.remove('show');
+    undoFn();
+  });
+  toast.classList.add('show');
+  clearTimeout(_actionToastTimer);
+  _actionToastTimer = setTimeout(() => toast.classList.remove('show'), duration);
 }
 
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -1210,6 +1309,8 @@ function playChannel(ch, startTime = 0) {
   applyPersistedCrop();
   currentChannel = ch;
   document.getElementById('player-overlay').classList.add('hidden');
+  hideStreamError();
+  showBuffering();
   document.getElementById('live-indicator').style.display = 'flex';
   const overlay = document.getElementById('np-overlay');
   overlay.textContent = ch.name;
@@ -1271,8 +1372,37 @@ function playChannel(ch, startTime = 0) {
       }
       requestAnimationFrame(waitForBuffer);
     });
+    // Auto-recover from transient fatal errors (the usual cause of a "stall") BEFORE
+    // giving up — this is hls.js's recommended recovery and keeps streams self-healing.
+    // Only after retries are exhausted do we surface the persistent error panel.
+    let netRetries = 0, mediaRetries = 0;
     _hls.on(Hls.Events.ERROR, (_, data) => {
-      if (data.fatal) console.warn('HLS fatal error', data);
+      if (!data.fatal) return;
+      console.warn('HLS fatal error', data.type, data.details);
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < 3) {
+        netRetries++;
+        showBuffering();
+        setTimeout(() => { if (_hls) _hls.startLoad(); }, 1000 * netRetries);
+        return;
+      }
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 2) {
+        mediaRetries++;
+        showBuffering();
+        try { _hls.recoverMediaError(); } catch {}
+        return;
+      }
+      // Recovery exhausted — show a clear, persistent error with a Retry button.
+      let title = 'Playback error';
+      let hint = 'This channel could not be played. Try another channel.';
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        title = 'Can’t load this stream';
+        hint = useLocalProxy
+          ? 'The stream or the local proxy is unreachable. Check that proxy.js is still running and that the channel is online.'
+          : 'The stream is unreachable, and the local proxy isn’t running. Start it with “node proxy.js”, then retry.';
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hint = 'The video stream is corrupted or uses an unsupported format. Try another channel.';
+      }
+      showStreamError(title, hint);
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     // Safari native HLS
@@ -1380,6 +1510,7 @@ function tvWakeOn() {
 function tvWakeOff() {
   if (!streamSettings.tvMac) { showToast('Configure TV MAC in ⚙ settings'); return; }
   if (!useLocalProxy) { showToast('Local proxy required for TV control'); return; }
+  if (!confirm('Turn off the TV?')) return;
   showToast('TV: Turning off…');
   fetch(`${LOCAL_PROXY}/tv-off?mac=${encodeURIComponent(streamSettings.tvMac)}`)
     .then(r => r.json())
@@ -1432,6 +1563,26 @@ function showToast(msg, duration = 2500) {
   toast.textContent = msg;
   toast.classList.add('show');
   setTimeout(() => { toast.classList.remove('show'); toast.textContent = 'Reloading stream…'; }, duration);
+}
+
+// ---- Buffering spinner + persistent error panel ----
+function showBuffering() { if (currentChannel) document.getElementById('player-loading').classList.add('show'); }
+function hideBuffering() { document.getElementById('player-loading').classList.remove('show'); }
+function showStreamError(title, hint) {
+  hideBuffering();
+  const el = document.getElementById('player-error');
+  el.querySelector('.err-title').textContent = title;
+  el.querySelector('.err-hint').textContent = hint;
+  el.classList.add('show');
+}
+function hideStreamError() { document.getElementById('player-error').classList.remove('show'); }
+
+// Open PiP from a toolbar button (uses the playing channel, else the keyboard-selected one).
+function pipFromUI() {
+  const ch = currentChannel
+    || (selectedIndex >= 0 && selectedIndex < filtered.length ? filtered[selectedIndex] : null);
+  if (ch) playPip(ch);
+  else showToast('Play or select a channel first, then add it to PiP');
 }
 
 function closePip() {
@@ -1556,6 +1707,39 @@ applyEPGVisibility();
 applyGroupsVisibility();
 updateTvBtn();
 setupAirplay();
+
+// Drive the buffering spinner and error panel from the main video element's state.
+(function setupPlayerStateUI() {
+  const v = document.getElementById('player');
+  v.addEventListener('waiting', showBuffering);
+  v.addEventListener('playing', () => { hideBuffering(); hideStreamError(); });
+  v.addEventListener('pause', hideBuffering);
+  v.addEventListener('error', () => {
+    if (_hls) return; // hls.js manages its own errors/recovery; this is for native/VOD only
+    if (currentChannel && v.error) {
+      showStreamError('Can’t play this channel',
+        'The stream is unavailable or in an unsupported format. Try another channel, or refresh the playlist.');
+    }
+  });
+})();
+
+// Network/proxy status dot in the topbar.
+function updateNetStatus(state) {
+  const dot = document.getElementById('net-status');
+  if (!dot) return;
+  if (!navigator.onLine) { dot.className = 'net-dot offline'; dot.title = 'Offline — no internet connection'; return; }
+  if (state === 'proxy-down') { dot.className = 'net-dot warn'; dot.title = 'Local proxy not reachable — restart “node proxy.js”'; return; }
+  dot.className = 'net-dot';
+  dot.title = useLocalProxy ? 'Online · local proxy connected' : 'Online · using CORS fallback';
+}
+window.addEventListener('online', () => updateNetStatus());
+window.addEventListener('offline', () => updateNetStatus());
+setInterval(async () => {
+  if (!navigator.onLine) { updateNetStatus(); return; }
+  if (useLocalProxy) { updateNetStatus((await checkLocalProxy()) ? undefined : 'proxy-down'); }
+  else updateNetStatus();
+}, 20000);
+updateNetStatus();
 
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
