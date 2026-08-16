@@ -54,6 +54,15 @@
   .tv-on-btn { color: var(--green); border-color: #3ddc8440; }
   .tv-on-btn:hover { background: #3ddc8420; color: var(--green); border-color: #3ddc8480; }
   #airplay-btn.casting { color: var(--accent2); border-color: var(--accent); background: rgba(108,99,255,0.18); }
+  /* Overflow "More" menu */
+  .more-wrap { position: relative; }
+  .more-menu { position: absolute; top: calc(100% + 8px); right: 0; min-width: 200px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 12px 32px rgba(0,0,0,0.55); z-index: 100; display: none; flex-direction: column; gap: 2px; }
+  .more-menu.open { display: flex; }
+  .more-menu .btn { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 8px 10px; }
+  .more-menu .btn:hover { background: var(--surface3); border-color: transparent; }
+  .more-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  .more-menu #tv-controls { padding: 2px 2px 0; }
+  .more-menu #tv-controls .btn { width: auto; flex: 1; justify-content: center; text-align: center; border-color: var(--border); background: var(--surface); }
   .btn-accent { background: var(--accent); border-color: var(--accent); color: white; }
   .btn-accent:hover { background: #7d75ff; border-color: #7d75ff; color: white; }
   .live-dot { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 2s infinite; }
@@ -336,23 +345,14 @@
     <div class="logo-text">stream<span>.</span></div>
   </div>
   <div class="topbar-actions">
-    <div id="tv-controls" style="display:none;align-items:center;gap:6px;margin-right:4px">
-      <button class="btn tv-on-btn" id="tv-on-btn" onclick="tvWakeOn()" title="Turn TV on (=)">ON</button>
-      <button class="btn" id="tv-off-btn" onclick="tvWakeOff()" title="Turn TV off">OFF</button>
-      <button class="btn" id="tv-hdmi2-btn" onclick="tvHdmi2()" title="Switch TV to HDMI 2">HDMI2</button>
-    </div>
-    <button class="btn" id="airplay-btn" onclick="startAirplay()" title="AirPlay to TV" style="display:none;align-items:center;gap:6px;margin-right:4px">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/><path d="m12 15 5 6H7l5-6z" fill="currentColor"/></svg>
-      AirPlay
-    </button>
-    <div class="search-box">
+    <div class="search-box" style="max-width:520px">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       </span>
       <input type="text" id="search-input" placeholder="Search channels…">
       <span class="regex-toggle" id="search-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('channel')">.*</span>
     </div>
-    <div class="search-box" id="group-search-box" style="max-width:200px">
+    <div class="search-box" id="group-search-box" style="max-width:220px">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </span>
@@ -363,20 +363,35 @@
       <div class="live-dot"></div>
       <span class="live-label">LIVE</span>
       <span style="color:var(--border2)">·</span>
-      <span id="topbar-channel" style="font-size:13px;font-weight:500;color:var(--text);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <span id="topbar-channel" style="font-size:13px;font-weight:500;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
     </div>
     <div style="flex:1"></div>
-    <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous</button>
-    <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop</button>
     <button class="btn" id="pip-btn" onclick="pipFromUI()" title="Picture-in-Picture — watch a second channel in a floating window [V]">▣ PiP</button>
     <button class="btn" id="transparent-btn" onclick="toggleTransparentSidebar()" title="TV overlay — transparent channel list over the video [T]">◧ Overlay</button>
     <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="net-status" class="net-dot" title="Online"></span>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
-    <button class="btn" id="refresh-btn" onclick="refreshChannels()" style="display:none" title="Re-fetch channels from provider">↻ Refresh</button>
-    <button class="btn" onclick="showSettings()" title="Stream settings">⚙</button>
-    <button class="btn" onclick="showSetup()">+ Load playlist</button>
+    <div class="more-wrap">
+      <button class="btn" id="more-btn" onclick="toggleMoreMenu(event)" title="More">⋯</button>
+      <div id="more-menu" class="more-menu">
+        <button class="btn" onclick="showSetup()">+ Load playlist</button>
+        <button class="btn" id="refresh-btn" onclick="refreshChannels()" style="display:none" title="Re-fetch channels from provider">↻ Refresh</button>
+        <button class="btn" onclick="showSettings()" title="Stream settings">⚙ Settings</button>
+        <button class="btn" id="prev-btn" onclick="playPrevious()" style="display:none" title="Previous channel [P]">← Previous channel</button>
+        <button class="btn" id="crop-btn" onclick="toggleCrop()" style="display:none" title="Crop to fill">⊡ Crop to fill</button>
+        <button class="btn" id="airplay-btn" onclick="startAirplay()" title="AirPlay to TV" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/><path d="m12 15 5 6H7l5-6z" fill="currentColor"/></svg>
+          AirPlay
+        </button>
+        <div class="more-sep" id="tv-controls-sep" style="display:none"></div>
+        <div id="tv-controls" style="display:none;gap:6px">
+          <button class="btn tv-on-btn" id="tv-on-btn" onclick="tvWakeOn()" title="Turn TV on (=)">ON</button>
+          <button class="btn" id="tv-off-btn" onclick="tvWakeOff()" title="Turn TV off">OFF</button>
+          <button class="btn" id="tv-hdmi2-btn" onclick="tvHdmi2()" title="Switch TV to HDMI 2">HDMI2</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -395,7 +410,8 @@
     <div class="channel-list" id="channel-list">
       <div class="empty-state">
         <svg width="40" height="40" fill="none" stroke="#7a7a95" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 3 8 3M12 3v4"/></svg>
-        <p>No playlist loaded.<br>Click <strong>+ Load playlist</strong> to get started.</p>
+        <p>No playlist loaded.</p>
+        <button class="btn btn-accent" onclick="showSetup()">+ Load playlist</button>
       </div>
     </div>
   </div>
@@ -1468,8 +1484,10 @@ function startStallWatchdog(ch) {
 
 function updateTvBtn() {
   const controls = document.getElementById('tv-controls');
+  const sep = document.getElementById('tv-controls-sep');
   const configured = !!streamSettings.tvMac;
   controls.style.display = configured ? 'flex' : 'none';
+  if (sep) sep.style.display = configured ? '' : 'none';
   document.body.classList.toggle('tv-configured', configured);
 }
 function tvWakeOn() {
@@ -1815,6 +1833,15 @@ updateNetStatus();
 // Virtual scroll — update on scroll
 document.getElementById('channel-list').addEventListener('scroll', vsRender, { passive: true });
 window.addEventListener('resize', debounce(clampPip, 150));
+
+// Overflow "More" menu
+function toggleMoreMenu(e) { e.stopPropagation(); document.getElementById('more-menu').classList.toggle('open'); }
+function closeMoreMenu() { document.getElementById('more-menu').classList.remove('open'); }
+document.getElementById('more-menu').addEventListener('click', (e) => { if (e.target.closest('button')) closeMoreMenu(); });
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('more-menu');
+  if (menu.classList.contains('open') && !e.target.closest('.more-wrap')) closeMoreMenu();
+});
 document.addEventListener('mousemove', debounce(resetTransparentTimer, 100), { passive: true });
 document.getElementById('channel-list').addEventListener('dragover', (e) => e.preventDefault());
 document.getElementById('channel-list').addEventListener('drop', (e) => {
