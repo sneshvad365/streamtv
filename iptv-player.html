@@ -286,7 +286,7 @@
     .topbar-actions { padding: 0 8px; gap: 6px; }
     .search-box { max-width: none !important; }
     #group-search-box { display: none; }
-    #live-indicator, #proxy-badge, #cache-badge, #refresh-btn, #prev-btn, #crop-btn, #epg-toggle-btn, #pip-btn, #transparent-btn, #net-status { display: none !important; }
+    #live-indicator, #proxy-badge, #cache-badge, #net-status { display: none !important; }
 
     /* Larger, more legible channel text on phones */
     .ch-name { font-size: 14px; }
@@ -345,36 +345,37 @@
     <div class="logo-text">stream<span>.</span></div>
   </div>
   <div class="topbar-actions">
-    <div class="search-box" style="max-width:520px">
+    <div class="search-box" style="max-width:680px">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       </span>
       <input type="text" id="search-input" placeholder="Search channels…">
       <span class="regex-toggle" id="search-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('channel')">.*</span>
     </div>
-    <div class="search-box" id="group-search-box" style="max-width:220px">
+    <div class="search-box" id="group-search-box" style="max-width:300px">
       <span class="search-icon">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </span>
       <input type="text" id="group-search-input" placeholder="Filter groups…" value="all.">
       <span class="regex-toggle" id="group-regex-toggle" title="Toggle regex mode" onclick="toggleSearchRegex('group')">.*</span>
     </div>
-    <div id="live-indicator" style="display:none;align-items:center;gap:8px;">
-      <div class="live-dot"></div>
-      <span class="live-label">LIVE</span>
+    <div id="live-indicator" style="display:none;align-items:center;gap:6px;">
+      <div class="live-dot" style="width:6px;height:6px;"></div>
+      <span class="live-label" style="font-size:10px;">LIVE</span>
       <span style="color:var(--border2)">·</span>
-      <span id="topbar-channel" style="font-size:13px;font-weight:500;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <span id="topbar-channel" style="font-size:11px;font-weight:500;color:var(--text2);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
     </div>
     <div style="flex:1"></div>
-    <button class="btn" id="pip-btn" onclick="pipFromUI()" title="Picture-in-Picture — watch a second channel in a floating window [V]">▣ PiP</button>
-    <button class="btn" id="transparent-btn" onclick="toggleTransparentSidebar()" title="TV overlay — transparent channel list over the video [T]">◧ Overlay</button>
-    <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
     <span id="net-status" class="net-dot" title="Online"></span>
     <span id="proxy-badge" style="font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid #ffb34040;background:#ffb34020;color:#ffb340;font-family:'DM Mono',monospace;display:none"></span>
     <span id="cache-badge" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;display:none"></span>
     <div class="more-wrap">
       <button class="btn" id="more-btn" onclick="toggleMoreMenu(event)" title="More">⋯</button>
       <div id="more-menu" class="more-menu">
+        <button class="btn" id="pip-btn" onclick="pipFromUI()" title="Picture-in-Picture — watch a second channel in a floating window [V]">▣ PiP</button>
+        <button class="btn" id="transparent-btn" onclick="toggleTransparentSidebar()" title="TV overlay — transparent channel list over the video [T]">◧ Overlay</button>
+        <button class="btn" id="epg-toggle-btn" onclick="toggleEPG()" title="Show/hide guide">Guide</button>
+        <div class="more-sep"></div>
         <button class="btn" onclick="showSetup()">+ Load playlist</button>
         <button class="btn" id="refresh-btn" onclick="refreshChannels()" style="display:none" title="Re-fetch channels from provider">↻ Refresh</button>
         <button class="btn" onclick="showSettings()" title="Stream settings">⚙ Settings</button>
